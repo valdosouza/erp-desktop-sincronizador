@@ -1,4 +1,4 @@
-unit ControllerProduto;
+﻿unit ControllerProduto;
 
 interface
 uses IBDatabase,Classes, IBQuery, SysUtils,ControllerBase,Vcl.Forms,
@@ -939,6 +939,25 @@ begin
         sql.add(' ORDER BY PRO_CODIGO ')
       else
         sql.add( FORderby );
+      // Primeira carga por periodo (SQL do Valdo, 2026-08-04): produtos
+      // movimentados em nota do periodo (pedido -> nota + itens do pedido)
+      if FPeriodo then
+      Begin
+        sql.Clear;
+        sql.add(concat(
+                'SELECT DISTINCT PT.* ',
+                'FROM TB_PEDIDO PD ',
+                '   INNER JOIN TB_NOTA_FISCAL NF ',
+                '   ON (NF.NFL_CODPED = PD.PED_CODIGO) ',
+                '   INNER JOIN TB_ITENS_NFL IT ',
+                '   ON (IT.ITF_CODPED = PD.PED_CODIGO) ',
+                '   INNER JOIN TB_PRODUTO PT ',
+                '   ON (PT.PRO_CODIGO = IT.ITF_CODPRO) ',
+                'WHERE NF.NFL_DT_EMISSAO BETWEEN :DATAINICIAL AND :DATAFINAL'
+        ));
+        ParamByName('DATAINICIAL').AsDateTime := DataInicial;
+        ParamByName('DATAFINAL').AsDateTime  := DataFinal;
+      End;
       Active := True;
       FetchAll;
       First;

@@ -88,6 +88,9 @@ Type
                           Cd_Item_Ctrl:Integer);
     procedure getlistDuplicados;
     procedure getlistByPedido(Cd_Pedido:Integer;Faturado:String);
+    // Primeira carga (padrao Fc_Usuario, Valdo 2026-08-04): com Periodo
+    // filtra pela PROPRIA data do movimento (CET_DATA)
+    function getList:Boolean;
 
     function ListarProdutoMovimentado:Boolean;
     function  ListarMovimento:Boolean;
@@ -263,7 +266,7 @@ begin
     //Atalizamos o regstro atual com devolvido.
     Registro.Tipo := Copy(concat(Registro.Tipo,' CANCELADA'),1,25);
     Self.update;
-    //Aqui define zero no codigo para que seja inserida a inversão do lançamento
+    //Aqui define zero no codigo para que seja inserida a inversï¿½o do lanï¿½amento
     if ( Registro.operacao = 'E' ) then
       Registro.operacao := 'S'
     else
@@ -536,7 +539,7 @@ Begin
                 ' and ( NFL_DT_EMISSAO between :DATA_INI AND :DATA_FIM ) ',
                 ' and ( pro_composicao <>2 ) ',
                 ' and ( ITF_CODEST =:ETS_CODIGO ) ',
-                //--SELECT DOS DOCUMENTOS FATURADOS E COM COMPOSIÇÃO
+                //--SELECT DOS DOCUMENTOS FATURADOS E COM COMPOSIï¿½ï¿½O
                 'UNION ',
                 'SELECT distinct PPD.ppd_codpro_d PRO_CODIGO, ITF_CODEST EST_CODETS, PRO_COMPOSICAO ',
                 '  FROM TB_ITENS_NFL ',
@@ -555,7 +558,7 @@ Begin
                 '  AND tb_produto.pro_composicao = 2 ',
                 '  AND ((NFL_STATUS <> ''C'') or (NFL_STATUS IS NULL)) ',
                 '  and ( ITF_CODEST =:ETS_CODIGO ) ',
-                //--SELECT DOS DOCUMENTOS NÃO FATURADOS E SEM COMPOSIÇÃO ',
+                //--SELECT DOS DOCUMENTOS Nï¿½O FATURADOS E SEM COMPOSIï¿½ï¿½O ',
                 'union ',
                 'SELECT ITF_CODPRO PRO_CODIGO, ITF_CODEST EST_CODETS, PRO_COMPOSICAO ',
                 'from tb_pedido ',
@@ -571,7 +574,7 @@ Begin
                 '  and ( PED_DATA between :DATA_INI AND :DATA_FIM ) ',
                 '  and ( pro_composicao <>2 ) ',
                 '  and ( ITF_CODEST =:ETS_CODIGO ) ',
-                //--sELECT DOS DOCUMENTOS NÃO FATURADOS E COM COMPOSIÇÃO ',
+                //--sELECT DOS DOCUMENTOS Nï¿½O FATURADOS E COM COMPOSIï¿½ï¿½O ',
                 'UNION ',
                 'SELECT DISTINCT PPD.ppd_codpro_d PRO_CODIGO, ITF_CODEST EST_CODETS, PRO_COMPOSICAO ',
                 '  FROM TB_ITENS_NFL ',
@@ -588,7 +591,7 @@ Begin
                 '  and ( PED_DATA between :DATA_INI AND :DATA_FIM ) ',
                 '  AND ( tb_produto.pro_composicao = 2 ) ',
                 '  and ( ITF_CODEST =:ETS_CODIGO ) ',
-                //--SELECT DOS DOCUMENTOS DE PRODUÇÃO MATERIA PRIMA ',
+                //--SELECT DOS DOCUMENTOS DE PRODUï¿½ï¿½O MATERIA PRIMA ',
                 'union ',
                 'SELECT DISTINCT orpma.PRE_CODPRO PRO_CODIGO, orp.ORP_ESTMP EST_CODETS, PRO_COMPOSICAO ',
                 'FROM tb_orp orp ',
@@ -598,7 +601,7 @@ Begin
                 '  on (p.pro_codigo = ORPMA.pre_codpro) ',
                 'WHERE (orp.ORP_DTCAD between :DATA_INI AND :DATA_FIM ) ',
                 ' AND ( orp.ORP_ESTMP =:ETS_CODIGO ) ',
-                //--SELECT DOS DOCUMENTOS DE PRODUÇÃO PRODUTO ACABADO ',
+                //--SELECT DOS DOCUMENTOS DE PRODUï¿½ï¿½O PRODUTO ACABADO ',
                 'UNION ',
                 'SELECT DISTINCT orppa.ORL_CODPRO PRO_CODIGO,orp.ORP_ESTMP EST_CODETS , PRO_COMPOSICAO ',
                 'FROM tb_orp orp ',
@@ -608,7 +611,7 @@ Begin
                 '  on (p.pro_codigo = ORPPA.orl_codpro) ',
                 'WHERE (orp.ORP_DTCAD between :DATA_INI AND :DATA_FIM ) ',
                 ' AND ( orp.ORP_ESTMP =:ETS_CODIGO ) ',
-                //--SELECT DOS DOCUMENTOS DE ORDEM DE SERVIÇO - EXINTORES ',
+                //--SELECT DOS DOCUMENTOS DE ORDEM DE SERVIï¿½O - EXINTORES ',
                 'UNION ',
                 'SELECT DISTINCT IOS.ios_codvcl  PRO_CODIGO, EST_CODETS EST_CODETS, PRO_COMPOSICAO ',
                 'FROM tb_ext_itens_ors ios ',
@@ -630,7 +633,7 @@ Begin
                 '  INNER JOIN TB_PRODUTO P ',
                 '  on (p.pro_codigo = CL.clt_codpro) ',
                 'WHERE  ML.mlt_sentido = ''E'' and cl.clt_estoque = ''S'' ',
-                //lançamento Avulso
+                //lanï¿½amento Avulso
                 'UNION ',
                 'SELECT distinct ce.cet_codpro PRO_CODIGO, ce.cet_codets  EST_CODETS, PRO_COMPOSICAO ',
                 'FROM tb_ctrl_estoque ce ',
@@ -639,10 +642,10 @@ Begin
                 'WHERE CE.cet_tipo = ''AVULSO'' ',
                 //Produto em Inventario
                 //pensar num num processo para pegar produtos que
-                //Estão zerados no inventario
+                //Estï¿½o zerados no inventario
                 //Tem saldo de estoque devido algum erro
-                //e não tem movimento algum que o faça participar desta lista.
-                //uma opção seria zerar todo o saldo dos produtos desta forma quem tem saldo pelo inventario e quem tem movimento seria recontado
+                //e nï¿½o tem movimento algum que o faï¿½a participar desta lista.
+                //uma opï¿½ï¿½o seria zerar todo o saldo dos produtos desta forma quem tem saldo pelo inventario e quem tem movimento seria recontado
                 'UNION ',
                 'SELECT distinct iv.ivt_codpro PRO_CODIGO, iv.ivt_codets  EST_CODETS, PRO_COMPOSICAO ',
                 'FROM tb_inventario iv ',
@@ -788,6 +791,44 @@ Begin
   End;
 end;
 
+function TControllerCtrlEstoque.getList: Boolean;
+var
+  Lc_Qry : TIBQuery;
+  LcLista : TCtrlEstoque;
+begin
+  Result := True;
+  Lc_Qry := GeraQuery;
+  Try
+    with Lc_Qry do
+    Begin
+      active := False;
+      sql.Clear;
+      sql.add('SELECT * FROM TB_CTRL_ESTOQUE WHERE (CET_CODIGO IS NOT NULL) ');
+      // Primeira carga por periodo (padrao Fc_Usuario, Valdo 2026-08-04):
+      // movimentacao pela PROPRIA data
+      if Periodo then
+      Begin
+        sql.add(' AND (CET_DATA BETWEEN :DATAINICIAL AND :DATAFINAL) ');
+        ParamByName('DATAINICIAL').AsDateTime := DataInicial;
+        ParamByName('DATAFINAL').AsDateTime  := DataFinal;
+      End;
+      Active := True;
+      FetchAll;
+      First;
+      Lista.Clear;
+      while not eof do
+      Begin
+        LcLista := TCtrlEstoque.Create;
+        get(Lc_qry,LcLista);
+        Lista.add(LcLista);
+        next;
+      end;
+    end;
+  Finally
+    FinalizaQuery(Lc_Qry);
+  End;
+end;
+
 procedure TControllerCtrlEstoque.getlistDuplicados;
 Var
   Lc_Qry : TIBQuery;
@@ -870,7 +911,7 @@ Begin
   Try
     with Lc_Qry do
     Begin
-      ///SELECT DOS DOCUMENTOS FATURADOS E SEM COMPOSIÇÃO
+      ///SELECT DOS DOCUMENTOS FATURADOS E SEM COMPOSIï¿½ï¿½O
       SQL.Clear;
       Lc_SqlTxt := concat(
                    'SELECT  0 CET_CODIGO, ',
@@ -910,7 +951,7 @@ Begin
                    ' and ( NFL_DT_EMISSAO between :DATA_INI AND :DATA_FIM ) ',
                    ' and ( pro_composicao <>2 ) ',
                    ' and ( ITF_CODEST =:ETS_CODIGO ) ',
-      ///SELECT DOS DOCUMENTOS FATURADOS E COM COMPOSIÇÃO
+      ///SELECT DOS DOCUMENTOS FATURADOS E COM COMPOSIï¿½ï¿½O
                    'UNION ',
                    '  SELECT 0 CET_CODIGO, ',
                    '         1 CET_TERMINAL, ',
@@ -947,7 +988,7 @@ Begin
                    '  AND ((NFL_STATUS <> ''C'') or (NFL_STATUS IS NULL)) ',
                     ' AND ( ITF_CODPRO =:PRO_CODIGO ) ',
                     ' and ( ITF_CODEST =:ETS_CODIGO ) ',
-      //SELECT DOS DOCUMENTOS NÃO FATURADOS E SEM COMPOSIÇÃO
+      //SELECT DOS DOCUMENTOS Nï¿½O FATURADOS E SEM COMPOSIï¿½ï¿½O
                     'union ',
                     'SELECT 0 CET_CODIGO, ',
                     '        1 CET_TERMINAL, ',
@@ -981,7 +1022,7 @@ Begin
                     ' and ( pro_composicao <>2 ) ',
                     ' AND ( ITF_CODPRO =:PRO_CODIGO ) ',
                     ' and ( ITF_CODEST =:ETS_CODIGO ) ',
-      ///SELECT DOS DOCUMENTOS NÃO FATURADOS E COM COMPOSIÇÃO
+      ///SELECT DOS DOCUMENTOS Nï¿½O FATURADOS E COM COMPOSIï¿½ï¿½O
                     ' UNION ',
                     ' SELECT 0 CET_CODIGO, ',
                     '        1 CET_TERMINAL, ',
@@ -1016,7 +1057,7 @@ Begin
                     ' AND ( tb_produto.pro_composicao = 2 ) ',
                     ' AND ( ITF_CODPRO =:PRO_CODIGO ) ',
                     ' and ( ITF_CODEST =:ETS_CODIGO ) ',
-      //SELECT DOS DOCUMENTOS DE PRODUÇÃO MATERIA PRIMA
+      //SELECT DOS DOCUMENTOS DE PRODUï¿½ï¿½O MATERIA PRIMA
                    ' union ',
                    'SELECT 0 CET_CODIGO, ',
                    '       1 CET_TERMINAL, ',
@@ -1029,14 +1070,14 @@ Begin
                    '       PRE_QTDUNI CET_QTDE, ',
                    '       orp.ORP_DTCAD CET_DATA, ',
                    '       current_timestamp UPDATE_AT, ',
-                   '       ''PRODUÇÃO MP'' as  CET_TIPO ',
+                   '       ''PRODUï¿½ï¿½O MP'' as  CET_TIPO ',
                    'FROM tb_orp orp ',
                    '  INNER JOIN tb_orpprev orpma ',
                    '  ON (orpma.PRE_CODORP = orp.ORP_CODIGO) ',
                    'WHERE (orp.ORP_DTCAD between :DATA_INI AND :DATA_FIM ) ',
                    ' AND ( orpma.PRE_CODPRO =:PRO_CODIGO ) ',
                    ' AND ( orp.ORP_ESTMP =:ETS_CODIGO ) ',
-      //SELECT DOS DOCUMENTOS DE PRODUÇÃO PRODUTO ACABADO
+      //SELECT DOS DOCUMENTOS DE PRODUï¿½ï¿½O PRODUTO ACABADO
                    'UNION ',
                    'SELECT 0 CET_CODIGO, ',
                    '       1 CET_TERMINAL, ',
@@ -1049,14 +1090,14 @@ Begin
                    '       orppa.ORL_QTDTOT CET_QTDE, ',
                    '       orp.ORP_DTCAD CET_DATA, ',
                    '       current_timestamp UPDATE_AT, ',
-                   '       ''PRODUÇÃO MP'' as  CET_TIPO ',
+                   '       ''PRODUï¿½ï¿½O MP'' as  CET_TIPO ',
                    'FROM tb_orp orp ',
                    '  INNER JOIN tb_orpreal orppa ',
                    '  ON (orppa.orl_codorp = orp.ORP_CODIGO) ',
                    'WHERE (orp.ORP_DTCAD between :DATA_INI AND :DATA_FIM ) ',
                    ' AND ( orppa.ORL_CODPRO =:PRO_CODIGO ) ',
                    ' AND ( orp.ORP_ESTMP =:ETS_CODIGO )',
-      //SELECT DOS DOCUMENTOS DE ORDEM DE SERVIÇO - EXINTORES
+      //SELECT DOS DOCUMENTOS DE ORDEM DE SERVIï¿½O - EXINTORES
                    ' UNION ',
                    ' SELECT 0 CET_CODIGO, ',
                    '         1 CET_TERMINAL, ',
@@ -1164,7 +1205,7 @@ Begin
   Try
     with Lc_Qry do
     Begin
-      ///SELECT DOS DOCUMENTOS FATURADOS E SEM COMPOSIÇÃO
+      ///SELECT DOS DOCUMENTOS FATURADOS E SEM COMPOSIï¿½ï¿½O
       SQL.Clear;
       SQL.Add(concat(
               'SELECT * ',
@@ -1200,7 +1241,7 @@ Begin
   Try
     with Lc_Qry do
     Begin
-      ///SELECT DOS DOCUMENTOS FATURADOS E SEM COMPOSIÇÃO
+      ///SELECT DOS DOCUMENTOS FATURADOS E SEM COMPOSIï¿½ï¿½O
       SQL.Clear;
       SQL.Add(concat(
                 'SELECT DISTINCT PRO_CODIGO ',
@@ -1221,7 +1262,7 @@ Begin
                 ' and ( NFL_DT_EMISSAO between :DATA_INI AND :DATA_FIM ) ',
                 ' and ( pro_composicao <>2 ) ',
                 ' and ( ITF_CODEST =:ETS_CODIGO ) ',
-                //SELECT DOS DOCUMENTOS FATURADOS E COM COMPOSIÇÃO
+                //SELECT DOS DOCUMENTOS FATURADOS E COM COMPOSIï¿½ï¿½O
                 'UNION ',
                 '  SELECT ',
                 '         PPD.ppd_codpro_d PRO_CODIGO ',
@@ -1241,7 +1282,7 @@ Begin
                 '  AND tb_produto.pro_composicao = 2 ',
                 '  AND ((NFL_STATUS <> ''C'') or (NFL_STATUS IS NULL)) ',
                 '  and ( ITF_CODEST =:ETS_CODIGO ) ',
-                //SELECT DOS DOCUMENTOS NÃO FATURADOS E SEM COMPOSIÇÃO
+                //SELECT DOS DOCUMENTOS Nï¿½O FATURADOS E SEM COMPOSIï¿½ï¿½O
                 ' union ',
                 ' SELECT ',
                 '         ITF_CODPRO PRO_CODIGO ',
@@ -1258,7 +1299,7 @@ Begin
                 '  and ( PED_DATA between :DATA_INI AND :DATA_FIM ) ',
                 '  and ( pro_composicao <>2 ) ',
                 '  and ( ITF_CODEST =:ETS_CODIGO ) ',
-                //SELECT DOS DOCUMENTOS NÃO FATURADOS E COM COMPOSIÇÃO
+                //SELECT DOS DOCUMENTOS Nï¿½O FATURADOS E COM COMPOSIï¿½ï¿½O
                 '  UNION ',
                 '  SELECT ',
                 '         PPD.ppd_codpro_d PRO_CODIGO ',
@@ -1276,7 +1317,7 @@ Begin
                 '  and ( PED_DATA between :DATA_INI AND :DATA_FIM ) ',
                 '  AND ( tb_produto.pro_composicao = 2 ) ',
                 '  and ( ITF_CODEST =:ETS_CODIGO ) ',
-                //SELECT DOS DOCUMENTOS DE PRODUÇÃO MATERIA PRIMA
+                //SELECT DOS DOCUMENTOS DE PRODUï¿½ï¿½O MATERIA PRIMA
                 ' union ',
                 'SELECT ',
                 '       orpma.PRE_CODPRO PRO_CODIGO ',
@@ -1285,7 +1326,7 @@ Begin
                 '  ON (orpma.PRE_CODORP = orp.ORP_CODIGO) ',
                 'WHERE (orp.ORP_DTCAD between :DATA_INI AND :DATA_FIM ) ',
                 ' AND ( orp.ORP_ESTMP =:ETS_CODIGO ) ',
-                //SELECT DOS DOCUMENTOS DE PRODUÇÃO PRODUTO ACABADO
+                //SELECT DOS DOCUMENTOS DE PRODUï¿½ï¿½O PRODUTO ACABADO
                 'UNION ',
                 'SELECT ',
                 '       orppa.ORL_CODPRO PRO_CODIGO ',
@@ -1294,7 +1335,7 @@ Begin
                 '  ON (orppa.orl_codorp = orp.ORP_CODIGO) ',
                 'WHERE (orp.ORP_DTCAD between :DATA_INI AND :DATA_FIM ) ',
                 ' AND ( orp.ORP_ESTMP =:ETS_CODIGO ) ',
-                //SELECT DOS DOCUMENTOS DE ORDEM DE SERVIÇO - EXINTORES
+                //SELECT DOS DOCUMENTOS DE ORDEM DE SERVIï¿½O - EXINTORES
                 ' UNION ',
                 ' SELECT ',
                 '         IOS.ios_codvcl  PRO_CODIGO ',
@@ -1432,8 +1473,8 @@ begin
                       '     OR ( upper(CET_TIPO) = ''COMPRA'' ) ',
                       '     OR ( upper(CET_TIPO) = ''ENTRADA XML'' ) ',
                       '     OR ( upper(CET_TIPO) = ''INFORMAR'' ) ',
-                      '     OR ( upper(CET_TIPO) = ''PRODUÇÃO MP'' ) ',
-                      '     OR ( upper(CET_TIPO) = ''PRODUÇÃO PA'' ) ',
+                      '     OR ( upper(CET_TIPO) = ''PRODUï¿½ï¿½O MP'' ) ',
+                      '     OR ( upper(CET_TIPO) = ''PRODUï¿½ï¿½O PA'' ) ',
                       '     OR ( upper(CET_TIPO) = ''VENDA'' ) ',
                       '     OR ( upper(CET_TIPO) = ''EXTINTOR'' ) ',
                       '     OR ( upper(CET_TIPO) = ''LOTE'' ) ',
@@ -1462,7 +1503,7 @@ begin
   for I := 0 to Lista.Count - 1 do
   Begin
     ClonarObj(Lista[I],Registro);
-    Recontagem; //Estou fazendo externamento por que já tenho a informação de composição - 16/02/2022
+    Recontagem; //Estou fazendo externamento por que jï¿½ tenho a informaï¿½ï¿½o de composiï¿½ï¿½o - 16/02/2022
   End;
 end;
 

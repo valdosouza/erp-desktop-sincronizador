@@ -428,8 +428,15 @@ begin
                       'WHERE FIN_CODIGO IS NOT NULL '
                       ));
 
+      // Periodo pela NOTA vinculada (decisao Valdo 2026-08-04, "enviar
+      // somente o que for do periodo"): FIN_CODNFL e o orderId do espelho -
+      // filtrar por FIN_DATA deixava parcela de nota fora do periodo passar
+      // (e estacionar em 409 ORDER_NOT_SYNCED na web)
       if FPeriodo then
-        sql.add(' AND ( FIN_DATA BETWEEN :DATAINI AND :DATAFIM ) ');
+        sql.add(concat(
+          ' AND EXISTS (SELECT 1 FROM TB_NOTA_FISCAL NF ',
+          'WHERE (NF.NFL_CODIGO = TB_FINANCEIRO.FIN_CODNFL) ',
+          'AND (NF.NFL_DT_EMISSAO BETWEEN :DATAINI AND :DATAFIM)) '));
 
       if Registro.Codigo >0 then
         sql.add(' AND FIN_CODIGO =:FIN_CODIGO ');

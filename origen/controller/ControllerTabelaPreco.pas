@@ -195,6 +195,27 @@ begin
 
       if Registro.Ativa <> '' then
         ParamByName('TPR_ATIVA').AsString := Registro.Ativa;
+      // Primeira carga por periodo (padrao Fc_Usuario, Valdo 2026-08-04):
+      // tabela com preco de produto movimentado em nota do periodo
+      if Periodo then
+      Begin
+        sql.Clear;
+        sql.add(concat(
+                'SELECT DISTINCT TP.* ',
+                'FROM TB_PEDIDO PD ',
+                '   INNER JOIN TB_NOTA_FISCAL NF ',
+                '   ON (NF.NFL_CODPED = PD.PED_CODIGO) ',
+                '   INNER JOIN TB_ITENS_NFL IT ',
+                '   ON (IT.ITF_CODPED = PD.PED_CODIGO) ',
+                '   INNER JOIN TB_PRECO PR ',
+                '   ON (PR.PRC_CODPRO = IT.ITF_CODPRO) ',
+                '   INNER JOIN TB_TABELA_PRECO TP ',
+                '   ON (TP.TPR_CODIGO = PR.PRC_CODTPR) ',
+                'WHERE NF.NFL_DT_EMISSAO BETWEEN :DATAINICIAL AND :DATAFINAL'
+        ));
+        ParamByName('DATAINICIAL').AsDateTime := DataInicial;
+        ParamByName('DATAFINAL').AsDateTime  := DataFinal;
+      End;
       Active := True;
       FetchAll;
       First;

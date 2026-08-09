@@ -88,6 +88,9 @@ begin
       active := False;
       sql.Clear;
       sql.add('SELECT * FROM TB_FORNECEDOR ');
+      // Realinhamento primeira carga (Valdo 2026-08-09): fornecedor e ativo
+      // da empresa, nao derivado do funil - vai SEMPRE completo, independente
+      // de Periodo (mesmo criterio ja aplicado a transportadora/colaborador).
       Active := True;
       FetchAll;
       First;

@@ -195,6 +195,27 @@ begin
                 'ORDER BY ETS_CODIGO '
       ));
       ParamByName('ETS_CODMHA').AsInteger := Registro.Estabelecimento;
+      // Primeira carga por periodo (padrao Fc_Usuario, Valdo 2026-08-04):
+      // deposito com saldo de produto movimentado em nota do periodo
+      if Periodo then
+      Begin
+        sql.Clear;
+        sql.add(concat(
+                'SELECT DISTINCT ES.* ',
+                'FROM TB_PEDIDO PD ',
+                '   INNER JOIN TB_NOTA_FISCAL NF ',
+                '   ON (NF.NFL_CODPED = PD.PED_CODIGO) ',
+                '   INNER JOIN TB_ITENS_NFL IT ',
+                '   ON (IT.ITF_CODPED = PD.PED_CODIGO) ',
+                '   INNER JOIN TB_ESTOQUE ET ',
+                '   ON (ET.EST_CODPRO = IT.ITF_CODPRO) ',
+                '   INNER JOIN TB_ESTOQUES ES ',
+                '   ON (ES.ETS_CODIGO = ET.EST_CODETS) ',
+                'WHERE NF.NFL_DT_EMISSAO BETWEEN :DATAINICIAL AND :DATAFINAL'
+        ));
+        ParamByName('DATAINICIAL').AsDateTime := DataInicial;
+        ParamByName('DATAFINAL').AsDateTime  := DataFinal;
+      End;
       Active := True;
       FetchAll;
       First;

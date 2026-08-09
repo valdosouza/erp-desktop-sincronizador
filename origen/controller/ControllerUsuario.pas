@@ -186,11 +186,24 @@ begin
     Lc_Qry := GeraQuery;
     with Lc_Qry do
     Begin
-      sql.add(concat('SELECT * ',
-                      'FROM TB_USUARIO ',
-                      'WHERE USU_ATIVO = ''S'' ',
-                      'ORDER BY USU_CODIGO ASC '
-      ));
+      // Sem periodo (carga completa): todos os usuarios. Com periodo:
+      // autores de pedido com nota no periodo (exemplo do Valdo, 2026-08-04).
+      if not Periodo then
+        sql.add('SELECT * FROM TB_USUARIO')
+      else
+      Begin
+        sql.add(concat(
+              'SELECT DISTINCT USR.* ',
+              'FROM TB_PEDIDO PD ',
+              '   INNER JOIN tb_nota_fiscal NF ',
+              '   ON (NF.nfl_codped = PD.ped_codigo) ',
+              '   inner join tb_usuario usr ',
+              '   on (usr.USU_CODIGO = PD.ped_codusu ) ',
+              ' where NF.nfl_dt_emissao BETWEEN :DATAINICIAL AND :DATAFINAL'
+        ));
+        ParamByName('DATAINICIAL').AsDateTime := DataInicial;
+        ParamByName('DATAFINAL').AsDateTime := DataFinal;
+      End;
       Active := True;
       FetchAll;
       First;

@@ -165,6 +165,8 @@ begin
       active := False;
       sql.Clear;
       sql.add('SELECT * FROM TB_EMBALAGEM ');
+      // Realinhamento primeira carga (Valdo 2026-08-09): catalogo pequeno -
+      // vai SEMPRE completo, independente de Periodo.
       Active := True;
       FetchAll;
       First;

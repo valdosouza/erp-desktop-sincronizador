@@ -252,6 +252,25 @@ begin
         ParamByName('PRO_CODIGO').AsInteger := Registro.CodigoProduto;
       if Registro.CodigoEstoque > 0 then
         ParamByName('ETS_CODIGO').AsInteger := Registro.CodigoEstoque;
+      // Primeira carga por periodo (padrao Fc_Usuario, Valdo 2026-08-04):
+      // saldo de estoque de produto movimentado em nota do periodo
+      if Periodo then
+      Begin
+        sql.Clear;
+        sql.add(concat(
+                'SELECT DISTINCT ET.* ',
+                'FROM TB_PEDIDO PD ',
+                '   INNER JOIN TB_NOTA_FISCAL NF ',
+                '   ON (NF.NFL_CODPED = PD.PED_CODIGO) ',
+                '   INNER JOIN TB_ITENS_NFL IT ',
+                '   ON (IT.ITF_CODPED = PD.PED_CODIGO) ',
+                '   INNER JOIN TB_ESTOQUE ET ',
+                '   ON (ET.EST_CODPRO = IT.ITF_CODPRO) ',
+                'WHERE NF.NFL_DT_EMISSAO BETWEEN :DATAINICIAL AND :DATAFINAL'
+        ));
+        ParamByName('DATAINICIAL').AsDateTime := DataInicial;
+        ParamByName('DATAFINAL').AsDateTime  := DataFinal;
+      End;
       Active := True;
       FetchAll;
       First;

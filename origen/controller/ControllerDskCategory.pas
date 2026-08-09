@@ -165,6 +165,9 @@ Begin
                 'SELECT * ',
                 'FROM tb_category ',
                 'order by POSIT_LEVEL '));
+      // Realinhamento primeira carga (Valdo 2026-08-09): catalogo pequeno -
+      // vai SEMPRE completo, independente de Periodo (evita custo de filtrar
+      // e o 409 PARENT_NOT_SYNCED de categoria pai fora do recorte).
       Active := True;
       First;
       while not eof do

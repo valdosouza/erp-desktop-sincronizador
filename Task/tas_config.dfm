@@ -418,7 +418,7 @@ inherited TasConfig: TTasConfig
             Top = 0
             Width = 448
             Height = 291
-            ActivePage = TabSheet2
+            ActivePage = tbs_primeira_carga_periodo
             Align = alClient
             TabOrder = 0
             object TabSheet2: TTabSheet
@@ -454,7 +454,7 @@ inherited TasConfig: TTasConfig
                 TabOrder = 0
               end
             end
-            object TabSheet4: TTabSheet
+            object tbs_primeira_carga_periodo: TTabSheet
               Caption = 'Per'#237'odo'
               ImageIndex = 2
               object Panel6: TPanel

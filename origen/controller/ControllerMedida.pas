@@ -344,6 +344,8 @@ begin
       ));
       if (Registro.MedidaCardapio <> '') then
       sql.add(' AND ( MED_ESPECIAL IS NOT NULL ) ');
+      // Realinhamento primeira carga (Valdo 2026-08-09): catalogo pequeno -
+      // vai SEMPRE completo, independente de Periodo.
       Active := True;
       FetchAll;
       First;
