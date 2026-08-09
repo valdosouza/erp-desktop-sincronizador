@@ -34,6 +34,9 @@ type
     procedure setBDCrud(BD:TIBDatabase);
     procedure ExecConsulta(SqlTxt: String);
     procedure ExecComando(SqlTxt: String);
+    // Igual ao ExecComando, mas devolve as linhas afetadas (RowsAffected) -
+    // usado pela primeira carga para informar quantos registros entraram na fila.
+    function ExecComandoRet(SqlTxt: String): Integer;
     procedure AtivaTrigger(op: Boolean);
     procedure ConectaBancoLocal;
     procedure ConectaBancoServidor;
@@ -46,13 +49,31 @@ type
     function  TabelaVazia(const ANomeTabela: String): Boolean;
     function  CampoExiste(const ANomeTabela, ANomeCampo: String): Boolean;
     function  GeneratorExiste(const ANomeGenerator: String): Boolean;
+    function  TriggerExiste(const ANomeTrigger: String): Boolean;
     procedure EnsureSincroniaTable;
     procedure EnsureListaSincroniaTable;
     procedure SeedListaSincroniaIfEmpty;
+    procedure EnforceSeqCatalogo;
     procedure EnsureDeletedColumns;
     procedure EnsureExternalCode;
+    procedure EnsureCategoryTable;
     procedure EnsureTriggers;
-    procedure EnsureSincronia;
+    // Conversao TB_GRUPOS/TB_SUBGRUPOS -> TB_CATEGORY (Valdo, 2026-08-01):
+    // arvore de DOIS niveis (grupo = raiz, subgrupo = filha) + preenche
+    // TB_PRODUTO.PRO_CODCAT onde ainda esta vazio. Roda DEPOIS de
+    // EnsureTriggers para a conversao cair na TB_SINCRONIA e sincronizar.
+    procedure MigraGruposParaCategoria;
+    // Limpeza final do bootstrap (Valdo, 2026-08-09; CORRIGIDO 2026-08-09 —
+    // so no clique manual, nunca no start automatico): a propria preparacao
+    // do banco (em especial MigraGruposParaCategoria, que roda DEPOIS dos
+    // triggers TG_SRC_* de proposito) pode enfileirar TB_SINCRONIA so por
+    // efeito colateral do boot - nao e mudanca legitima nem Primeira Carga.
+    // Zera a fila e o generator, mas SOMENTE quando pLimparFila=True
+    // (MnuPreparaLocalClick/"Preparar o banco") - o start automatico
+    // (DataModuleCreate) NUNCA deve zerar a fila, senao qualquer abertura
+    // do Sincronizador apaga registros legitimos ainda pendentes de envio.
+    procedure LimpaFilaSincroniaDoBootstrap;
+    procedure EnsureSincronia(pLimparFila: Boolean = False);
     // Motor de reindexação (D3/D4): resolve o CPF/CNPJ real a partir do
     // código interno do Firebird (EMP_CODIGO) — usado por toda classe de
     // envio que hoje só manda o código local onde o contrato novo exige
@@ -62,6 +83,12 @@ type
     // Le o flag DELETED real do registro (decisao 8) - usado pelas classes
     // *_send_web para montar o payload; 'N' quando registro/coluna ausente.
     function GetDeletedFlag(const pTabela, pCampoChave: String; pCodigo: Integer): String;
+    // Numero da NFS-e da nota de SERVICO (decisao Valdo 2026-08-01): na nota
+    // de servico o NFL_NUMERO fica vazio - o numero real esta no RETORNO da
+    // NFS-e (TB_RETORNO_NFS.NFS_NUMERO, chave NFS_CODNFL = NFL_CODIGO).
+    // '' quando ainda nao ha retorno (a nota reenvia no proximo ciclo ate a
+    // NFS-e ser autorizada) ou banco sem NFS-e.
+    function GetNfsNumero(pCodNfl: Integer): String;
     // Indexacao do AUTOR (prompt_indexacao_usuario_firebird.md, decisao 2):
     // resolve USU_CODIGO para a referencia do bloco `user` dos movimentos.
     // Cascata: colaborador vinculado com CPF/CNPJ VALIDO -> pDocumento;
@@ -198,6 +225,11 @@ end;
 
 procedure TDM.ExecComando(SqlTxt: String);
 begin
+  ExecComandoRet(SqlTxt);
+end;
+
+function TDM.ExecComandoRet(SqlTxt: String): Integer;
+begin
   with Qr_Crud do
   Begin
     if not Transaction.InTransaction then Transaction.StartTransaction;
@@ -205,6 +237,7 @@ begin
     sql.Clear;
     SQL.Add(SqlTxt);
     ExecSQL;
+    Result := RowsAffected;
     if Transaction.InTransaction then Transaction.Commit;
     Close;
   End;
@@ -264,6 +297,18 @@ begin
   ExecConsulta(
     'SELECT COUNT(*) AS QTDE FROM RDB$GENERATORS ' +
     'WHERE UPPER(TRIM(RDB$GENERATOR_NAME)) = ''' + UpperCase(ANomeGenerator) + ''''
+  );
+  Result := Qr_Crud.FieldByName('QTDE').AsInteger > 0;
+end;
+
+function TDM.TriggerExiste(const ANomeTrigger: String): Boolean;
+begin
+  // Firebird 2.5/5.0: nao existe DROP TRIGGER IF EXISTS — verifica nos
+  // metadados antes (mesmo padrao de TabelaExiste/GeneratorExiste).
+  ExecConsulta(
+    'SELECT COUNT(*) AS QTDE FROM RDB$TRIGGERS ' +
+    'WHERE UPPER(TRIM(RDB$TRIGGER_NAME)) = ''' + UpperCase(ANomeTrigger) + ''' ' +
+    'AND COALESCE(RDB$SYSTEM_FLAG,0) = 0'
   );
   Result := Qr_Crud.FieldByName('QTDE').AsInteger > 0;
 end;
@@ -346,7 +391,37 @@ begin
   // (idempotente - roda a cada start, DELETE de 0 linhas e no-op).
   ExecComando('DELETE FROM TB_LISTA_SINCRONIA WHERE DESC_TABELA LIKE ''TB_REST_%''');
 
-  if not TabelaVazia('TB_LISTA_SINCRONIA') then Exit;
+  // Rodada 2 — Sincronia por PROCESSO (D8/D11 de prompt_notas_mercadoria_
+  // servico.md, 2026-07-27): TB_PEDIDO saiu da fila e a NOTA_MERCADORIA
+  // intermediaria tambem — bancos ja semeados perdem as 5 linhas aqui
+  // (mesmo padrao TB_REST_*). ATENCAO: o DELETE e por TABELA/KIND, NUNCA
+  // por SEQ — a renumeracao de 2026-07-27 REUTILIZOU o Seq 21 antigo da
+  // NOTA_MERCADORIA para a NOTA_SERVICO (deletar por SEQ mataria a linha
+  // nova no start seguinte). As linhas NOVAS (22/23/24) NAO sao
+  // ressemeadas (o seed so roda com a tabela vazia) — INSERT manual
+  // documentado no patch 07; o SEQ, esse sim, e imposto pelo
+  // EnforceSeqCatalogo abaixo.
+  ExecComando('DELETE FROM TB_LISTA_SINCRONIA WHERE DESC_TABELA = ''TB_PEDIDO''');
+  ExecComando(
+    'DELETE FROM TB_LISTA_SINCRONIA ' +
+    'WHERE DESC_TABELA = ''TB_NOTA_FISCAL'' AND KIND = ''NOTA_MERCADORIA''');
+  // O trigger de captura de TB_PEDIDO morre junto (D8). Nome real gerado
+  // pelo EnsureTriggers: TG_SRC_PEDIDO (prefixo TB_ removido) — com as
+  // linhas fora do catalogo ele nao e recriado.
+  if TriggerExiste('TG_SRC_PEDIDO') then
+    ExecComando('DROP TRIGGER TG_SRC_PEDIDO');
+  // Fila orfa: sem KIND de TB_PEDIDO no catalogo, linhas pendentes dessa
+  // tabela nunca mais seriam consumidas — remove de vez (D13 estendeu a
+  // limpeza diaria para QUALQUER registro > 48h, mas aqui sai na hora).
+  ExecComando('DELETE FROM TB_SINCRONIA WHERE SRC_TABELA = ''TB_PEDIDO''');
+
+  if not TabelaVazia('TB_LISTA_SINCRONIA') then
+  Begin
+    // Banco ja semeado: impoe o SEQ canonico por (WAY, DESC_TABELA, KIND)
+    // — renumeracao de 2026-07-27 aplicada SOZINHA, sem SQL manual.
+    EnforceSeqCatalogo;
+    Exit;
+  End;
 
   with Qr_Acao do
   Begin
@@ -394,14 +469,44 @@ begin
 
   // Perfil PDV (decisao 3 do indexador terminal): em terminal <> 0 os
   // CADASTROS nascem desligados - eles chegam ao PDV pela retaguarda e
-  // seriam reenvio redundante; o PDV sincroniza so MOVIMENTO (Seq 17-29).
+  // seriam reenvio redundante; o PDV sincroniza so MOVIMENTO (Seqs 20-33).
   // Aplicado apenas no seed inicial (base recem-preparada); reativacao
   // manual via UPDATE continua possivel.
+  // Reordenacao 2026-07-27 (usuario -> Seq 1; cadastros -> 2-17; carrier e
+  // servico -> 18/19, antes das notas): o filtro virou "tudo que NAO e o
+  // bloco de movimento" — robusto a renumeracoes de cadastro.
   if GbTerminal <> 0 then
     ExecComando(
       'UPDATE TB_LISTA_SINCRONIA SET SET_ON = ''N'' ' +
-      'WHERE (SEQ BETWEEN 1 AND 16) OR (SEQ IN (38, 39))'
+      'WHERE ( SEQ NOT BETWEEN 20 AND 33 )'
     );
+end;
+
+{ Renumeracao do catalogo (Valdo, 2026-07-27): a cada start, o SEQ de cada
+  linha do catalogo canonico (un_sincronia_seed.pas) e imposto ao banco por
+  (WAY, DESC_TABELA, KIND) — a chave real da mecanica. Bancos ja semeados
+  se renumeram SOZINHOS, sem SQL manual de UPDATE.
+  FASE UNICA (sem SEQ = SEQ + 1000 intermediario): a PK da tabela e
+  (WAY, DESC_TABELA, KIND) e SEQ nao tem PK/UNIQUE/index — duplicidade
+  transitoria de SEQ durante o loop nao viola constraint nenhuma e ao final
+  todos os SEQs canonicos sao unicos. UPDATE de 0 linhas quando ja esta
+  certo = no-op idempotente; interrompido no meio, o proximo start conclui. }
+procedure TDM.EnforceSeqCatalogo;
+Var
+  I   : Integer;
+  Row : TSincroniaSeedRow;
+begin
+  for I := Low(SINCRONIA_SEED) to High(SINCRONIA_SEED) do
+  Begin
+    Row := SINCRONIA_SEED[I];
+    ExecComando(
+      'UPDATE TB_LISTA_SINCRONIA SET SEQ = ' + IntToStr(Row.Seq) + ' ' +
+      'WHERE WAY = ''' + Row.Way + ''' ' +
+      'AND DESC_TABELA = ''' + Row.DescTabela + ''' ' +
+      'AND KIND = ''' + Row.Kind + ''' ' +
+      'AND COALESCE(SEQ, -1) <> ' + IntToStr(Row.Seq)
+    );
+  End;
 end;
 
 { Passo 5 - soft delete universal (decisao 8): DELETED CHAR(1) DEFAULT 'N'
@@ -462,6 +567,39 @@ begin
     ExecComando('ALTER TABLE TB_USUARIO ADD EXTERNALCODE VARCHAR(36)');
     ExecComando('CREATE INDEX IDX_USUARIO_EXTERNALCODE ON TB_USUARIO (EXTERNALCODE)');
   End;
+end;
+
+{ TB_CATEGORY local + GN_CATEGORY + TB_PRODUTO.PRO_CODCAT (conversao de
+  categorias, Valdo 2026-08-01): o modelo novo categoriza produto por
+  TB_CATEGORY (mesma forma da web - arvore por POSIT_LEVEL, caminho
+  materializado '001.005'); TB_GRUPOS/TB_SUBGRUPOS ficam como legado. Em
+  banco de cliente antigo nada disso existe - o bootstrap cria. DDL
+  fornecida pelo Valdo; PK em ID (na web a PK e id+institution, mas o banco
+  local e de UMA instalacao). Criada ANTES de EnsureTriggers para a
+  TG_SRC_CATEGORY (catalogo Seq 3) nascer no mesmo start. }
+procedure TDM.EnsureCategoryTable;
+begin
+  if not GeneratorExiste('GN_CATEGORY') then
+    ExecComando('CREATE GENERATOR GN_CATEGORY');
+
+  if not TabelaExiste('TB_CATEGORY') then
+    ExecComando(
+      'CREATE TABLE TB_CATEGORY (' +
+      'ID               INTEGER NOT NULL, ' +
+      'TB_INSTITUTE_ID  INTEGER NOT NULL, ' +
+      'DESCRIPTION      VARCHAR(100) CHARACTER SET WIN1252 COLLATE WIN_PTBR, ' +
+      'POSIT_LEVEL      VARCHAR(40) CHARACTER SET WIN1252 COLLATE WIN_PTBR, ' +
+      'KIND             CHAR(1), ' +
+      'ENABLED          VARCHAR(1), ' +
+      'UPDATE_AT        TIMESTAMP, ' +
+      'DELETED          CHAR(1) DEFAULT ''N'', ' +
+      'CONSTRAINT PK_TB_CATEGORY PRIMARY KEY (ID))'
+    );
+
+  // O produto passa a apontar para a categoria nova (bancos legados nao
+  // tem a coluna; o desktop novo ja nasce com ela)
+  if TabelaExiste('TB_PRODUTO') and (not CampoExiste('TB_PRODUTO','PRO_CODCAT')) then
+    ExecComando('ALTER TABLE TB_PRODUTO ADD PRO_CODCAT INTEGER');
 end;
 
 { Passo 6 - triggers de captura TG_SRC_* (decisoes 5, 6 e 7): UMA trigger
@@ -530,7 +668,351 @@ begin
   end;
 end;
 
-procedure TDM.EnsureSincronia;
+type
+  // Linha materializada da conversao grupo/subgrupo -> categoria
+  TConvCategoriaRow = record
+    Codigo    : Integer;  // GRP_CODIGO (grupo) ou SBG_CODIGO (subgrupo)
+    GrupoCod  : Integer;  // SBG_CODGRP (0 na linha de grupo)
+    Descricao : String;
+    Ativo     : String;
+    Deleted   : String;
+    CatId     : Integer;  // preenchidos durante a conversao
+    CatPath   : String;
+  end;
+  TConvCategoriaRows = array of TConvCategoriaRow;
+
+  // Linha ja existente na TB_CATEGORY (checagem de sujeira do Passo 0)
+  TCatExistenteRow = record
+    Descricao : String;
+    Nivel     : String;
+  end;
+  TCatExistenteRows = array of TCatExistenteRow;
+
+{ Conversao TB_GRUPOS/TB_SUBGRUPOS -> TB_CATEGORY (Valdo, 2026-08-01):
+  hierarquia de DOIS niveis - grupo vira categoria RAIZ (POSIT_LEVEL '001')
+  e subgrupo vira FILHA do seu grupo ('001.005'; INNER JOIN GRP_CODIGO =
+  SBG_CODGRP). Ids NOVOS via GN_CATEGORY - os codigos legados de grupo e
+  subgrupo colidem entre si e nao servem de id. TB_PRODUTO.PRO_CODCAT e
+  gravado na mesma passada e pode ser SUBSTITUIDO (Valdo, 2026-08-01: o
+  campo nao esta em uso) - nivel 2 pelo subgrupo (PRO_CODSBG) e, para
+  produto SO com grupo, a categoria raiz; o filtro <> nos UPDATEs so pula
+  linha ja correta (idempotencia - UPDATE sem mudanca ainda dispararia a
+  TG_SRC_PRODUTO e reencheria a fila a cada start).
+  Idempotente por DESCRICAO (raiz = POSIT_LEVEL sem ponto; filha = debaixo
+  do caminho do pai - mesma mecanica do getAutoCreateBy* do
+  ControllerDskCategory): roda a cada start e converte tambem grupos que o
+  desktop legado criar depois. LIMPEZA PREVIA (Passo 0, Valdo 2026-08-04):
+  linha que a conversao nao produziria = tabela suja -> zera TB_CATEGORY +
+  PRO_CODCAT + generator e reconverte do zero; tabela conforme passa ilesa. Roda DEPOIS de EnsureTriggers de proposito:
+  INSERT/UPDATE caem na TB_SINCRONIA e a web recebe categorias e produtos
+  no ciclo normal (raizes inserem antes das filhas; catalogo Seq 3
+  [category] < Seq 6 [produto]). }
+procedure TDM.MigraGruposParaCategoria;
+Var
+  LcGrupos  : TConvCategoriaRows;
+  LcSubs    : TConvCategoriaRows;
+  LcCats    : TCatExistenteRows;
+  I, J, K   : Integer;
+  LcPaiIdx  : Integer;
+  LcCatId   : Integer;
+  LcPath    : String;
+  LcSujeira : Boolean;
+  LcAchou   : Boolean;
+  LcPaiDesc : String;
+
+  function ContaPontos(const pNivel: String): Integer;
+  Var
+    P: Integer;
+  begin
+    Result := 0;
+    for P := 1 to Length(pNivel) do
+      if pNivel[P] = '.' then Inc(Result);
+  end;
+
+  function ProximoId: Integer;
+  begin
+    ExecConsulta('SELECT GEN_ID(GN_CATEGORY, 1) AS ID FROM RDB$DATABASE');
+    Result := Qr_Crud.FieldByName('ID').AsInteger;
+  end;
+
+  procedure InsereCategoria(pId: Integer; const pDescricao, pPath, pAtivo, pDeleted: String);
+  begin
+    with Qr_Acao do
+    Begin
+      Database    := IBD_Gestao;
+      Transaction := IBD_Gestao.DefaultTransaction;
+      if not Transaction.InTransaction then Transaction.StartTransaction;
+      try
+        SQL.Text :=
+          'INSERT INTO TB_CATEGORY ' +
+          '(ID, TB_INSTITUTE_ID, DESCRIPTION, POSIT_LEVEL, KIND, ENABLED, UPDATE_AT, DELETED) ' +
+          'VALUES (:ID, 1, :DESCRIPTION, :POSIT_LEVEL, ''P'', :ENABLED, CURRENT_TIMESTAMP, :DELETED)';
+        // TB_INSTITUTE_ID = 1: valor LOCAL (mesmo das rotinas existentes -
+        // tas_config/Fc_GrupoToCategoria); nao viaja no /category/sincronize
+        // (D12 - o servidor deriva a institution da API key). KIND 'P' =
+        // arvore de produtos.
+        ParamByName('ID').AsInteger         := pId;
+        ParamByName('DESCRIPTION').AsString := pDescricao;
+        ParamByName('POSIT_LEVEL').AsString := pPath;
+        if Trim(pAtivo) = 'N' then
+          ParamByName('ENABLED').AsString := 'N'
+        else
+          ParamByName('ENABLED').AsString := 'S';
+        if Trim(pDeleted) = 'S' then
+          ParamByName('DELETED').AsString := 'S'
+        else
+          ParamByName('DELETED').AsString := 'N';
+        ExecSQL;
+        Transaction.Commit;
+      except
+        on E: Exception do
+        Begin
+          if Transaction.InTransaction then Transaction.Rollback;
+          raise;
+        End;
+      end;
+    End;
+  end;
+
+begin
+  // Perfil PDV (decisao 3 do indexador terminal): quem converte e o
+  // SERVIDOR LOCAL (terminal 0). No PDV a conversao criaria ids proprios
+  // via GN_CATEGORY e colidiria com o que a retaguarda do Gestao2016
+  // replicar (mesma pendencia da replicacao de EXTERNALCODE - Q8).
+  if GbTerminal <> 0 then Exit;
+
+  // Instalacao ja nascida no modelo novo (sem legado): nada a converter
+  if not TabelaExiste('TB_GRUPOS') then Exit;
+
+  // Materializa as listas ANTES de qualquer lookup (Qr_Crud e reutilizado)
+  ExecConsulta(
+    'SELECT GRP_CODIGO, GRP_DESCRICAO, GRP_ATIVO, DELETED FROM TB_GRUPOS ' +
+    'WHERE GRP_DESCRICAO IS NOT NULL AND TRIM(GRP_DESCRICAO) <> '''' ' +
+    'ORDER BY GRP_CODIGO'
+  );
+  SetLength(LcGrupos, 0);
+  while not Qr_Crud.Eof do
+  Begin
+    SetLength(LcGrupos, Length(LcGrupos) + 1);
+    with LcGrupos[High(LcGrupos)] do
+    Begin
+      Codigo    := Qr_Crud.FieldByName('GRP_CODIGO').AsInteger;
+      GrupoCod  := 0;
+      Descricao := Trim(Qr_Crud.FieldByName('GRP_DESCRICAO').AsString);
+      Ativo     := Trim(Qr_Crud.FieldByName('GRP_ATIVO').AsString);
+      Deleted   := Trim(Qr_Crud.FieldByName('DELETED').AsString);
+      CatId     := 0;
+      CatPath   := '';
+    End;
+    Qr_Crud.Next;
+  End;
+  if Length(LcGrupos) = 0 then Exit;
+
+  SetLength(LcSubs, 0);
+  if TabelaExiste('TB_SUBGRUPOS') then
+  Begin
+    ExecConsulta(
+      'SELECT S.SBG_CODIGO, S.SBG_CODGRP, S.SBG_DESCRICAO, S.SBG_ATIVO, S.DELETED ' +
+      'FROM TB_SUBGRUPOS S ' +
+      'INNER JOIN TB_GRUPOS G ON (G.GRP_CODIGO = S.SBG_CODGRP) ' +
+      'WHERE S.SBG_DESCRICAO IS NOT NULL AND TRIM(S.SBG_DESCRICAO) <> '''' ' +
+      'ORDER BY S.SBG_CODGRP, S.SBG_CODIGO'
+    );
+    while not Qr_Crud.Eof do
+    Begin
+      SetLength(LcSubs, Length(LcSubs) + 1);
+      with LcSubs[High(LcSubs)] do
+      Begin
+        Codigo    := Qr_Crud.FieldByName('SBG_CODIGO').AsInteger;
+        GrupoCod  := Qr_Crud.FieldByName('SBG_CODGRP').AsInteger;
+        Descricao := Trim(Qr_Crud.FieldByName('SBG_DESCRICAO').AsString);
+        Ativo     := Trim(Qr_Crud.FieldByName('SBG_ATIVO').AsString);
+        Deleted   := Trim(Qr_Crud.FieldByName('DELETED').AsString);
+        CatId     := 0;
+        CatPath   := '';
+      End;
+      Qr_Crud.Next;
+    End;
+  End;
+
+  { Passo 0 - limpeza previa (Valdo, 2026-08-04): a conversao so confia em
+    TB_CATEGORY que ELA mesma produziu. Qualquer linha que a conversao nao
+    geraria - raiz que nao e grupo, filha que nao e subgrupo do seu grupo,
+    3+ niveis, duplicata, POSIT_LEVEL vazio (restos da rotina antiga do
+    tas_config, testes ou grupo renomeado no legado) - zera a tabela, o
+    PRO_CODCAT e o generator e reconverte do zero. Tabela ja conforme passa
+    ILESA: limpar a cada start trocaria os ids e reencheria a fila (mesmo
+    principio do <> dos UPDATEs). O DELETE nao dispara trigger (TG_SRC_*
+    nao captura DELETE) - quem viaja para a web e a reconversao. }
+  SetLength(LcCats, 0);
+  ExecConsulta('SELECT DESCRIPTION, POSIT_LEVEL FROM TB_CATEGORY');
+  while not Qr_Crud.Eof do
+  Begin
+    SetLength(LcCats, Length(LcCats) + 1);
+    with LcCats[High(LcCats)] do
+    Begin
+      Descricao := Trim(Qr_Crud.FieldByName('DESCRIPTION').AsString);
+      Nivel     := Trim(Qr_Crud.FieldByName('POSIT_LEVEL').AsString);
+    End;
+    Qr_Crud.Next;
+  End;
+
+  LcSujeira := False;
+  for I := 0 to High(LcCats) do
+  Begin
+    if (LcCats[I].Descricao = '') or (LcCats[I].Nivel = '') or
+       (ContaPontos(LcCats[I].Nivel) > 1) then
+      LcSujeira := True
+    else if ContaPontos(LcCats[I].Nivel) = 0 then
+    Begin
+      // Raiz: precisa corresponder a um grupo e nao ter duplicata
+      LcAchou := False;
+      for J := 0 to High(LcGrupos) do
+        if UpperCase(LcGrupos[J].Descricao) = UpperCase(LcCats[I].Descricao) then
+        Begin
+          LcAchou := True;
+          Break;
+        End;
+      if not LcAchou then LcSujeira := True;
+      for K := 0 to I - 1 do
+        if (ContaPontos(LcCats[K].Nivel) = 0) and
+           (UpperCase(LcCats[K].Descricao) = UpperCase(LcCats[I].Descricao)) then
+          LcSujeira := True;
+    End
+    else
+    Begin
+      // Filha: o pai (path antes do ponto) tem que ser uma raiz existente
+      // cujo grupo tenha subgrupo com esta descricao; sem duplicata sob o pai
+      LcPath    := Copy(LcCats[I].Nivel, 1, Pos('.', LcCats[I].Nivel) - 1);
+      LcPaiDesc := '';
+      for K := 0 to High(LcCats) do
+        if LcCats[K].Nivel = LcPath then
+        Begin
+          LcPaiDesc := LcCats[K].Descricao;
+          Break;
+        End;
+      LcPaiIdx := -1;
+      for J := 0 to High(LcGrupos) do
+        if (LcPaiDesc <> '') and
+           (UpperCase(LcGrupos[J].Descricao) = UpperCase(LcPaiDesc)) then
+        Begin
+          LcPaiIdx := J;
+          Break;
+        End;
+      LcAchou := False;
+      if LcPaiIdx >= 0 then
+        for J := 0 to High(LcSubs) do
+          if (LcSubs[J].GrupoCod = LcGrupos[LcPaiIdx].Codigo) and
+             (UpperCase(LcSubs[J].Descricao) = UpperCase(LcCats[I].Descricao)) then
+          Begin
+            LcAchou := True;
+            Break;
+          End;
+      if not LcAchou then LcSujeira := True;
+      for K := 0 to I - 1 do
+        if (ContaPontos(LcCats[K].Nivel) = 1) and
+           (Copy(LcCats[K].Nivel, 1, Pos('.', LcCats[K].Nivel) - 1) = LcPath) and
+           (UpperCase(LcCats[K].Descricao) = UpperCase(LcCats[I].Descricao)) then
+          LcSujeira := True;
+    End;
+    if LcSujeira then Break;
+  End;
+
+  if LcSujeira then
+  Begin
+    // PRO_CODCAT zera ANTES (o UPDATE dispara TG_SRC_PRODUTO - produto sem
+    // grupo/subgrupo precisa levar o NULL a web; os demais sao regravados
+    // nos Passos 2/3). Generator volta a 0 - ids novos e compactos.
+    ExecComando('UPDATE TB_PRODUTO SET PRO_CODCAT = NULL WHERE PRO_CODCAT IS NOT NULL');
+    ExecComando('DELETE FROM TB_CATEGORY');
+    ExecComando('SET GENERATOR GN_CATEGORY TO 0');
+  End;
+
+  // Passo 1 - grupo vira (ou reencontra) categoria RAIZ
+  for I := 0 to High(LcGrupos) do
+  Begin
+    ExecConsulta(
+      'SELECT ID, POSIT_LEVEL FROM TB_CATEGORY ' +
+      'WHERE UPPER(DESCRIPTION) = ' + QuotedStr(UpperCase(LcGrupos[I].Descricao)) + ' ' +
+      'AND POSIT_LEVEL NOT LIKE ''%.%'' ' +
+      'ORDER BY ID'
+    );
+    if not Qr_Crud.Eof then
+    Begin
+      LcGrupos[I].CatId   := Qr_Crud.FieldByName('ID').AsInteger;
+      LcGrupos[I].CatPath := Trim(Qr_Crud.FieldByName('POSIT_LEVEL').AsString);
+    End
+    else
+    Begin
+      LcCatId := ProximoId;
+      LcPath  := StrZero(LcCatId, 3, 0);
+      InsereCategoria(LcCatId, LcGrupos[I].Descricao, LcPath,
+                      LcGrupos[I].Ativo, LcGrupos[I].Deleted);
+      LcGrupos[I].CatId   := LcCatId;
+      LcGrupos[I].CatPath := LcPath;
+    End;
+  End;
+
+  // Passo 2 - subgrupo vira filha do seu grupo + preenche PRO_CODCAT
+  for J := 0 to High(LcSubs) do
+  Begin
+    LcPaiIdx := -1;
+    for I := 0 to High(LcGrupos) do
+      if LcGrupos[I].Codigo = LcSubs[J].GrupoCod then
+      Begin
+        LcPaiIdx := I;
+        Break;
+      End;
+    if LcPaiIdx < 0 then Continue; // grupo pai sem descricao valida
+
+    ExecConsulta(
+      'SELECT ID FROM TB_CATEGORY ' +
+      'WHERE UPPER(DESCRIPTION) = ' + QuotedStr(UpperCase(LcSubs[J].Descricao)) + ' ' +
+      'AND POSIT_LEVEL LIKE ' + QuotedStr(LcGrupos[LcPaiIdx].CatPath + '.%') + ' ' +
+      'ORDER BY ID'
+    );
+    if not Qr_Crud.Eof then
+      LcCatId := Qr_Crud.FieldByName('ID').AsInteger
+    else
+    Begin
+      LcCatId := ProximoId;
+      LcPath  := LcGrupos[LcPaiIdx].CatPath + '.' + StrZero(LcCatId, 3, 0);
+      InsereCategoria(LcCatId, LcSubs[J].Descricao, LcPath,
+                      LcSubs[J].Ativo, LcSubs[J].Deleted);
+    End;
+    LcSubs[J].CatId := LcCatId;
+
+    // PRO_CODCAT = categoria de NIVEL 2 (substituicao livre - campo nao
+    // estava em uso); o <> evita UPDATE de linha ja certa (trigger)
+    ExecComando(
+      'UPDATE TB_PRODUTO SET PRO_CODCAT = ' + IntToStr(LcCatId) + ' ' +
+      'WHERE PRO_CODSBG = ' + IntToStr(LcSubs[J].Codigo) + ' ' +
+      'AND COALESCE(PRO_CODCAT, 0) <> ' + IntToStr(LcCatId)
+    );
+  End;
+
+  // Passo 3 - produto SO com grupo (sem subgrupo) cai na categoria raiz
+  for I := 0 to High(LcGrupos) do
+    ExecComando(
+      'UPDATE TB_PRODUTO SET PRO_CODCAT = ' + IntToStr(LcGrupos[I].CatId) + ' ' +
+      'WHERE PRO_CODGRP = ' + IntToStr(LcGrupos[I].Codigo) + ' ' +
+      'AND COALESCE(PRO_CODSBG, 0) = 0 ' +
+      'AND COALESCE(PRO_CODCAT, 0) <> ' + IntToStr(LcGrupos[I].CatId)
+    );
+end;
+
+procedure TDM.LimpaFilaSincroniaDoBootstrap;
+begin
+  // Roda por ULTIMO, sempre - independente do que a preparacao do banco
+  // tenha enfileirado como efeito colateral (conversao de categoria,
+  // qualquer futuro passo que grave em tabela com TG_SRC_*). Zera a fila
+  // E o generator, para o proximo registro legitimo (Primeira Carga ou
+  // alteracao real feita depois deste ponto) nascer com SRC_CODIGO=1.
+  ExecComando('DELETE FROM TB_SINCRONIA');
+  ExecComando('SET GENERATOR GN_SINCRONIA TO 0');
+end;
+
+procedure TDM.EnsureSincronia(pLimparFila: Boolean = False);
 begin
   BootstrapOk := False;
   EnsureSincroniaTable;        // passo 1 - fila + generator + trigger da PK
@@ -538,9 +1020,23 @@ begin
   // TB_SYNC_TABLE pertence a retaguarda do Gestao2016 e fica intocada
   EnsureListaSincroniaTable;   // passo 3 - catalogo + LAST_UPDATE
   SeedListaSincroniaIfEmpty;
+  EnsureCategoryTable;         // TB_CATEGORY + GN + PRO_CODCAT (antes das triggers)
   EnsureDeletedColumns;        // passo 5 - decisao 8
   EnsureExternalCode;
   EnsureTriggers;              // passo 6 - decisoes 5/6/7
+  // Passos CONDICIONAIS (Valdo, 2026-08-09 - 2a correcao no mesmo dia):
+  // conversao de categoria E limpeza da fila SO rodam no clique manual de
+  // "Preparar o banco" (MnuPreparaLocalClick, pLimparFila=True). O start
+  // automatico (DataModuleCreate, todo open do Sincronizador) chama
+  // EnsureSincronia SEM esse parametro (default False) e NAO deve tocar
+  // em TB_CATEGORY/PRO_CODCAT nem na fila - MigraGruposParaCategoria
+  // sozinha ja e capaz de enfileirar todo o catalogo de produto/categoria
+  // (Passo 0 "sujeira"), e abrir o app nao pode ter esse efeito colateral.
+  if pLimparFila then
+  Begin
+    MigraGruposParaCategoria;    // conversao grupo/subgrupo -> categoria (na fila)
+    LimpaFilaSincroniaDoBootstrap; // por ultimo - zera o que a conversao enfileirou
+  End;
   BootstrapOk := True;
 end;
 
@@ -570,6 +1066,29 @@ begin
   );
   if not Qr_Crud.Eof then
     Result := Trim(Qr_Crud.FieldByName('EMP_CNPJ').AsString);
+  // Documento INVALIDO = SEM documento (2026-08-01, precedente da decisao 2
+  // da revisao de entidades): CPF zerado/sentinela na referencia
+  // (salesmanDocument/carrierDocument/...) fazia o vinculo falhar PARA
+  // SEMPRE na web (409 *_NOT_SYNCED eterno) — sem documento, o movimento
+  // viaja sem o vinculo, igual ao fallback do bloco user.
+  if (Result <> '') and (not ValidaCPF_CNPJ(Result)) then
+    Result := '';
+end;
+
+function TDM.GetNfsNumero(pCodNfl: Integer): String;
+begin
+  Result := '';
+  if pCodNfl <= 0 then Exit;
+  try
+    ExecConsulta(
+      'SELECT NFS_NUMERO FROM TB_RETORNO_NFS WHERE NFS_CODNFL = ' + IntToStr(pCodNfl)
+    );
+    if not Qr_Crud.Eof then
+      Result := Trim(Qr_Crud.FieldByName('NFS_NUMERO').AsString);
+  except
+    // Tabela ausente (banco sem NFS-e - ex.: Pipoteca): segue vazio
+    Result := '';
+  end;
 end;
 
 function TDM.GetUserSyncRef(pUsuCodigo: Integer; var pDocumento, pExternalCode: String): Boolean;

@@ -18,6 +18,9 @@ uses/paths e testar é do Valdo. A setes-sync do outro lado JÁ está pronta e p
 | 3 | `03_bank_account_fix.md` | C1 | Bug do payload vazio (serializava objeto errado) |
 | 4 | `04_reativar_nfse.md` | C3, C4 | RegisterClass da NFS-e + alerta do RunScript |
 | 5 | `05_data_objects_guia.md` | C5–C8, C11 | Guia de remodelagem dos data objects (contrato novo, endpoint a endpoint, na ordem D8) |
+| 6 | `06_notas_mercadoria_servico.md` | D1–D7 (notas M×S) | Serviço nos 3 níveis (produto/pedido/nota), filtros de natureza, bugs de catch-up. ⚠️ mecânica `[KIND]` superada pelo 08 |
+| 7 | `07_sincronia_por_processo.md` | D8–D12 | NOTA = único fato gerador; hierarquia TInvoice*; renumeração Seqs 21–24; TB_PEDIDO fora da fila |
+| 8 | `08_fila_marca_unica.md` | D13 | Marca ÚNICA no SRC_LOG (só de quem envia), filtros DISJUNTOS, ordem de serviço COMPLETA no /order-service, limpeza por idade |
 
 ### Onda 0 — bootstrap automático de TB_LISTA_SINCRONIA (NOVO)
 

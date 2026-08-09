@@ -36,12 +36,20 @@ implementation
 procedure TSendToWebServer.PreparaListBox;
 Var
   I: Integer;
+  LcDesc: String;
 Begin
   FlistBox.Items.Clear;
   FListaSincronia.getListaEnviar;
   for I := 0 to FListaSincronia.ListaEnviar.count - 1 do
   Begin
-    FlistBox.Items.Add(FListaSincronia.ListaEnviar[I].Tabela);
+    // Revisao do Valdo (2026-07-27): a TABELA nao identifica mais o que esta
+    // rodando (varios processos na MESMA tabela — ex.: TB_NOTA_FISCAL nas
+    // Seqs 20-24). Exibe o DESC_PROCESS do catalogo; fallback = tabela
+    // (banco semeado antigo com DESC_PROCESS vazio).
+    LcDesc := Trim(FListaSincronia.ListaEnviar[I].DescricaoProcesso);
+    if LcDesc = '' then
+      LcDesc := FListaSincronia.ListaEnviar[I].Tabela;
+    FlistBox.Items.Add(LcDesc);
   End;
 End;
 
@@ -82,17 +90,26 @@ begin
             else if LcSendWeb.ExternalCode <> '' then
               SaveExternalCode(LcSendWeb);
           Finally
-            FSincronia.Clear;
-            FSincronia.Registro.Tabela    := FListaSincronia.Registro.Tabela;
-            FSincronia.Registro.Registro  := FSincronia.Lista[I].Registro;
-            FSincronia.Registro.LogResult := LcSendWeb.Retorno.Mensagem;
-            FSincronia.saveReturn;
-            case LcSendWeb.Retorno.ID of
-              200:Begin
-                    // Se der certo a proxima sincronia ser� a partir desta data e hora + 01 segundo
-                    SetLastUpdate(FListaSincronia.registro.Tabela, FListaSincronia.registro.Tipo, 'E', FSincronia.Lista[I].Tempo + StrToTime('00:00:01'));
-                  end;
-            end;
+            // D13 (Rodada 3 de prompt_notas_mercadoria_servico.md): a marca
+            // no SRC_LOG e UNICA por registro e SO de quem ENVIA — classe
+            // cujo filtro nao casou (Skip) nao grava SRC_LOG, nao loga erro
+            // e nao avanca checkpoint: o registro segue pendente para as
+            // demais classes do ciclo (filtros DISJUNTOS garantem que
+            // exatamente uma o reivindica; orfaos saem pela limpeza de 48h).
+            if not LcSendWeb.Skip then
+            Begin
+              FSincronia.Clear;
+              FSincronia.Registro.Tabela    := FListaSincronia.Registro.Tabela;
+              FSincronia.Registro.Registro  := FSincronia.Lista[I].Registro;
+              FSincronia.Registro.LogResult := LcSendWeb.Retorno.Mensagem;
+              FSincronia.saveReturn;
+              case LcSendWeb.Retorno.ID of
+                200:Begin
+                      // Se der certo a proxima sincronia ser� a partir desta data e hora + 01 segundo
+                      SetLastUpdate(FListaSincronia.registro.Tabela, FListaSincronia.registro.Tipo, 'E', FSincronia.Lista[I].Tempo + StrToTime('00:00:01'));
+                    end;
+              end;
+            End;
             updateMsgProcess(concat(FListaSincronia.registro.DescricaoProcesso, ' - ',
             intToStr(progresso.MaxValue), ' / ',
             intToStr(progresso.Progress + 1)), indice);
@@ -117,20 +134,27 @@ end;
 
 procedure TSendToWebServer.SaveExternalCode(pSendWeb: TGeneralWeb);
 begin
-  // decisao 1: a classe informa o alvo (TB_EMPRESA x TB_COLABORADOR)
+  // decisao 1: a classe informa o alvo (TB_EMPRESA x TB_COLABORADOR).
+  // 2026-08-03 (loop dos ~373 sem-doc): o UPDATE incondicional regravava o
+  // MESMO UUID a cada ciclo -> TG_SRC_* disparava -> reenfileirava o
+  // registro para sempre. Guarda IS DISTINCT FROM (Firebird 2.0+): UPDATE
+  // que afeta 0 linhas nao dispara trigger — o loop morre por construcao.
   DM.ExecComando(
     'UPDATE ' + pSendWeb.ExternalCodeTable +
     ' SET EXTERNALCODE = ''' + pSendWeb.ExternalCode + ''' ' +
-    'WHERE ' + pSendWeb.ExternalCodeKeyField + ' = ' + IntToStr(pSendWeb.Codigo)
+    'WHERE ' + pSendWeb.ExternalCodeKeyField + ' = ' + IntToStr(pSendWeb.Codigo) +
+    '  AND (EXTERNALCODE IS DISTINCT FROM ''' + pSendWeb.ExternalCode + ''') '
   );
 end;
 
 procedure TSendToWebServer.ClearExternalCode(pSendWeb: TGeneralWeb);
 begin
+  // Mesma guarda anti-loop: so limpa se ha o que limpar.
   DM.ExecComando(
     'UPDATE ' + pSendWeb.ExternalCodeTable +
     ' SET EXTERNALCODE = NULL ' +
-    'WHERE ' + pSendWeb.ExternalCodeKeyField + ' = ' + IntToStr(pSendWeb.Codigo)
+    'WHERE ' + pSendWeb.ExternalCodeKeyField + ' = ' + IntToStr(pSendWeb.Codigo) +
+    '  AND (EXTERNALCODE IS NOT NULL) '
   );
 end;
 

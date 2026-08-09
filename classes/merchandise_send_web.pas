@@ -100,6 +100,17 @@ begin
   FCtrl.getbyId;
   if FCtrl.exist then
   Begin
+    // Notas Mercadoria x Servico (D2): esta classe cobre SOMENTE PRO_TIPO
+    // 'P'/'M' — 'S' viaja pela TServiceSendWeb (Seq 40) e 'A' (cardapio,
+    // restaurante APOSENTADO) nao sincroniza. D13: skip = FSkip ("nao e
+    // meu registro") — o motor NAO grava SRC_LOG e o registro fica para a
+    // classe irma ('A' nao e de ninguem: sai pela limpeza de 48h).
+    if (FCtrl.Registro.Tipo <> 'P') and (FCtrl.Registro.Tipo <> 'M') then
+    Begin
+      FSkip := True;
+      Exit;
+    End;
+
     // FillDataObjects preenche product/merchandise/stock (campos reais das
     // tabelas); marca/embalagem/medida são resolvidas por descrição AQUI
     // (GetBrandName/GetPackageName/GetMeasureName), pois TMerchandise/TStock
@@ -119,6 +130,8 @@ begin
       LcProduct.AddPair('description', FCtrl.Obj.Produto.Descricao);
       LcProduct.AddPair('categoryId', TJSONNumber.Create(FCtrl.Obj.Produto.Categoria));
       LcProduct.AddPair('identifier', FCtrl.Obj.Produto.Identificador);
+      // D2: tb_product.kind espelha PRO_TIPO ('P'/'M' — 'S' nunca passa aqui)
+      LcProduct.AddPair('kind', FCtrl.Registro.Tipo);
       // TODO: Firebird (TProduto) não grava centro de custo/plano financeiro
       // no produto ainda — financialPlansId fica NULL.
       LcProduct.AddPair('financialPlansId', TJSONNull.Create);

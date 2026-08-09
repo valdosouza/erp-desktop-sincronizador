@@ -57,6 +57,11 @@ begin
         LcJson.AddPair('dtExpiration', FormatDateTime('yyyy-mm-dd', FCtrl.Registro.DataVencimento));
         LcJson.AddPair('tagValue', TJSONNumber.Create(FCtrl.Registro.ValorParcela));
         LcJson.AddPair('paymentTypeDescription', FCtrl.FormaPagto.Registro.Descricao);
+        // Bills no espelho (decisoes D1/D3 do Valdo, 2026-08-03): FIN_TIPO
+        // define receber x pagar (web deriva kind RL/PL + operation C/D) e
+        // FIN_NUMERO e o numero do documento da bill.
+        LcJson.AddPair('kind', FCtrl.Registro.TipoFinanceiro);
+        LcJson.AddPair('number', FCtrl.Registro.NumeroDuplicata);
         LcJson.AddPair('deleted', DM.GetDeletedFlag('TB_FINANCEIRO', 'FIN_CODIGO', FCodigo)); // decisao 8: le o DELETED real da tabela
 
         // payment só entra quando o título está baixado (FIN_BAIXA='S') —

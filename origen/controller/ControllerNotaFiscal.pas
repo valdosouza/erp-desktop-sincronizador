@@ -74,6 +74,7 @@ Type
     procedure FillDataObjetoMerchandise(PcRegistro: TNotaFiscal);
     procedure FillDataObjetoDetached(PcRegistro: TNotaFiscal);
     function VerificaServico:Boolean;
+    function VerificaProduto:Boolean;
     function DocFiscalRefComplementar:String;
     function AtualizaEmpresaNF:Boolean;
     function AtualizaEstabelecimento(CodigoAnterior:Integer;EstoqueID:Integer):boolean;
@@ -564,6 +565,35 @@ Begin
                 '   INNER JOIN TB_PRODUTO ',
                 '   ON  (PRO_CODIGO = ITF_CODPRO) ',
                 'WHERE (ITF_CODNFL=:ITF_CODNFL) AND (PRO_TIPO = ''S'') '
+      ));
+      ParamByName('ITF_CODNFL').AsInteger := Registro.Codigo;
+      Active := True;
+      FetchAll;
+      Result := (recordcount > 0);
+    end;
+  finally
+    FinalizaQuery( Lc_Qry );
+  end;
+end;
+
+function TControllerNotaFiscal.VerificaProduto: Boolean;
+Var
+  Lc_Qry: TIBQuery;
+Begin
+  // Notas Mercadoria x Servico (D3 de prompt_notas_mercadoria_servico.md):
+  // molde da VerificaServico — detecta itens de MERCADORIA (PRO_TIPO <> 'S')
+  // na nota; usada pela TInvoiceMerchandiseSendWeb para pular nota so-servico.
+  Lc_Qry := GeraQuery;
+  try
+    with Lc_Qry do
+    Begin
+      sql.Clear;
+      sql.Add(concat(
+                'SELECT  ITF_CODIGO ',
+                'FROM TB_ITENS_NFL ',
+                '   INNER JOIN TB_PRODUTO ',
+                '   ON  (PRO_CODIGO = ITF_CODPRO) ',
+                'WHERE (ITF_CODNFL=:ITF_CODNFL) AND (PRO_TIPO <> ''S'') '
       ));
       ParamByName('ITF_CODNFL').AsInteger := Registro.Codigo;
       Active := True;
@@ -1263,9 +1293,12 @@ begin
       if FTipoPedido > 0 then
         sql.add(' and ( PED_TIPO=:PED_TIPO )  ');
 
+      // 'TODAS' (primeira carga 2026-08-04): sem filtro de tipo - avulsa E
+      // notas de processo na mesma lista (a fila tem 1 linha por nota e os
+      // filtros disjuntos das classes roteiam no envio)
       if ( FTipoNota = 'EM' ) then
         sql.add(' AND ( N.nfl_tipo = ''EM'' )' )
-      else
+      else if ( FTipoNota <> 'TODAS' ) then
         sql.add(' AND ( N.nfl_tipo <> ''EM'' )' );
 
       if FEstabelecimento > 0 then
@@ -1321,11 +1354,20 @@ begin
                        '  ON (N.NFL_CODPED = P.PED_CODIGO) ',
                        ' WHERE  ( NFL_CODIGO =:NFL_CODIGO ) '
                   ));
+        // Rodada 2 (D11 de prompt_notas_mercadoria_servico.md): os irmaos
+        // do processo (venda/compra/ajuste) so variam o PED_TIPO — com
+        // TipoPedido > 0 o filtro entra e a classe errada nem enxerga a
+        // nota (exist = False -> skip). 0 = comportamento antigo.
+        if FTipoPedido > 0 then
+          sql.add(' AND ( P.PED_TIPO =:PED_TIPO ) ');
       End;
       sql.add(' ORDER BY NFL_CODIGO asc ');
 
       if NotaAvulsa then
         ParamByName('NFL_TIPO').AsString := Registro.Tipo;
+
+      if (not NotaAvulsa) and (FTipoPedido > 0) then
+        ParamByName('PED_TIPO').AsInteger := FTipoPedido;
 
       ParamByName('NFL_CODIGO').AsInteger := Registro.Codigo;
       Active := True;

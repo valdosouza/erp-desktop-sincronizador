@@ -1,4 +1,4 @@
-unit un_sincroniza;
+﻿unit un_sincroniza;
 
 interface
 

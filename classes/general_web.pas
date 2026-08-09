@@ -40,6 +40,13 @@ Type
     FInstitutionDestino  : Integer;
     FInstitutionOrigem   : Integer;
     FTerminal            : Integer;
+    // D13 (Rodada 3 de prompt_notas_mercadoria_servico.md): a classe seta
+    // True no GenerateJson quando o FILTRO dela nao casa com o registro
+    // ("nao tem nada pra enviar") — o send() nao dispara HTTP nem gera
+    // erro, e o MOTOR (un_send_to_web_server) NAO grava SRC_LOG: o
+    // registro segue pendente para as demais classes do ciclo. A marca no
+    // SRC_LOG e UNICA por registro e so de quem ENVIA.
+    FSkip                : Boolean;
 
     procedure createComponents;Virtual;
     procedure GenerateJson;Virtual;
@@ -81,6 +88,9 @@ Type
     // true = o documento corrigido virou o indice; limpar o EXTERNALCODE no
     // Firebird (tabela/campo de ExternalCodeTable/KeyField).
     property ClearExternalCode: Boolean read FClearExternalCode;
+    // D13: true = o registro nao e desta classe (filtro disjunto nao casou);
+    // o motor pula saveReturn/checkpoint e o registro fica na fila.
+    property Skip        : Boolean     read FSkip;
     property InstitutionOrigem:Integer  Read FInstitutionOrigem  write setFInstitutionOrigem;
     property InstitutionDestino:Integer Read FInstitutionDestino write setFInstitutionDestino;
 
@@ -245,7 +255,16 @@ procedure TGeneralWeb.send;
 begin
   try
     FRetorno.Clear;
+    // Estado por REGISTRO: sem o reset, o skip (que nao passa pelo
+    // ParseRetornoEnvelope) herdaria ExternalCode/ClearExternalCode do
+    // registro anterior e o write-back iria para a linha errada.
+    FSkip := False;
+    FExternalCode := '';
+    FClearExternalCode := False;
     GenerateJson;
+    // D13: filtro nao casou — nada a enviar, nada a marcar (sem erro).
+    if FSkip then
+      Exit;
     if FStrJson <> '' then
     Begin
       RESTResponse.RootElement := '';

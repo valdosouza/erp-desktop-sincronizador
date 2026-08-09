@@ -17,12 +17,14 @@ uses
   un_sincroniza, un_base_setes, UnFunctions, Winapi.ShellAPI, IBX.IBQuery, Vcl.Dialogs,
   payment_type_send_web,bank_account_send_web, cashier_send_web,
   category_send_web,file_send_web,financial_plans_send_web,financial_statement_send_web,
-  financial_send_web,invoice_send_web,invoice_merchandise_send_web,
+  financial_send_web,invoice_send_web,
+  invoice_merchandise_sale_send_web,invoice_merchandise_purchase_send_web,
+  invoice_merchandise_adjust_send_web,
   invoice_rectification_send_web,invoice_return_55_send_web,invoice_return_65_send_web,
-  invoice_return_service_send_web,carrier_send_web,user_send_web,
-  order_purchase_send_web,order_sale_send_web,order_stock_adjust_send_web,
+  invoice_return_service_send_web,invoice_service_send_web,carrier_send_web,
+  user_send_web,
    promotion_send_web,
-  salesman_send_web,
+  salesman_send_web,service_send_web,
   stock_balance_send_web,stock_statement_send_web, brand_send_web,
   measure_send_web, merchandise_send_web, price_send_web,price_list_send_web,
   package_send_web,provider_send_web;
@@ -798,7 +800,10 @@ begin
       // EXTERNALCODE e triggers TG_SRC_*) - mesmo caminho do start
       // automatico (decisoes 1-10 do prompt de construcao do banco).
       // Erros aparecem aqui (no start automatico vao para o log).
-      DM.EnsureSincronia;
+      // pLimparFila=True (Valdo, 2026-08-09): SO aqui, no clique manual de
+      // "Preparar o banco", a TB_SINCRONIA e zerada ao final - o start
+      // automatico do app (DataModuleCreate) nunca deve limpar a fila.
+      DM.EnsureSincronia(True);
 
       if not DM.IBT_Atualiza.InTransaction then DM.IBT_Atualiza.StartTransaction;
       AjustaGenerator;
@@ -1049,31 +1054,44 @@ initialization
   RegisterClass(TFinancialStatementSendWeb);
   RegisterClass(TFinancialSendWeb);
   RegisterClass(TInvoiceSendWeb);
-  RegisterClass(TInvoiceMerchandiseSendWeb);
+  // Rodada 2 — Sincronia por PROCESSO (D8-D11, 2026-07-27): a NOTA e o
+  // unico fato gerador; as 3 classes abaixo (filhas da intermediaria
+  // TInvoiceMerchandiseSendWeb, que NAO se registra) enviam o processo
+  // completo. As TOrder*SendWeb foram APOSENTADAS (arquivos removidos,
+  // mesmo tratamento dos rest_* — ver comentario ao fim do initialization).
+  RegisterClass(TInvoiceMerchandiseSaleSendWeb);     // Seq 22 -> /order-sale
+  RegisterClass(TInvoiceMerchandisePurchaseSendWeb); // Seq 23 -> /order-purchase
+  RegisterClass(TInvoiceMerchandiseAdjustSendWeb);   // Seq 24 -> /order-stock-adjust
   RegisterClass(TInvoiceRectificationSendWeb);
   RegisterClass(TInvoiceReturn55SendWeb);
   RegisterClass(TInvoiceReturn65SendWeb);
   RegisterClass(TInvoiceReturnServiceSendWeb); // Patch 04 (C3): NFS-e reativada
+  RegisterClass(TInvoiceServiceSendWeb); // Rodada 2: processo de servico (Seq 21 -> /order-service)
   RegisterClass(TMeasureSendWeb);
   RegisterClass(TMerchandiseSendWeb);
-  RegisterClass(TOrderPurchaseSendWeb);
-  RegisterClass(TOrderSaleSendWeb);
-  RegisterClass(TOrderStockAdjustSendWeb);
   RegisterClass(TPackageSendWeb);
   RegisterClass(TPriceSendWeb);
   RegisterClass(TPriceListSendWeb);
   RegisterClass(TPromotionSendWeb);
   RegisterClass(TProviderSendWeb);
   RegisterClass(TSalesManSendWeb);
+  RegisterClass(TServiceSendWeb); // notas mercadoria x servico (D2, 2026-07-26)
   RegisterClass(TStockBalanceSendWeb);
   RegisterClass(TStockListSendWeb);
-  RegisterClass(TStockStatementSendWeb);
+  //RegisterClass(TStockStatementSendWeb); // comentado 2026-08-09 (Valdo): nao enviar por enquanto
   RegisterClass(TUserSendWeb); // indexacao de usuarios (2026-07-26)
   // Modulo restaurante APOSENTADO (decisao D23 da revisao do sincronizador,
   // Infra-IA/setes-sync/prompt_revisao_sincronizador_setes_sync.md) - os
   // 7 arquivos rest_*_send_web.pas nao existem mais no projeto (nem a
   // setes-sync tem os endpoints); RegisterClass/uses removidos para o
   // projeto voltar a compilar.
+  // Rodada 2 — Sincronia por PROCESSO (D8/D11, patch 07, 2026-07-27):
+  // TOrderSaleSendWeb, TOrderPurchaseSendWeb, TOrderStockAdjustSendWeb e
+  // TOrderServiceSendWeb APOSENTADAS (arquivos order_*_send_web.pas
+  // removidos, mesmo precedente dos rest_*) — o payload de pedido delas
+  // foi absorvido pela hierarquia TInvoiceSendWeb/TInvoiceMerchandise*.
+  // TInvoiceMerchandiseSendWeb continua no projeto como classe
+  // INTERMEDIARIA (base de heranca) e por isso NAO e registrada.
 
 finalization
 
@@ -1089,25 +1107,26 @@ finalization
   UnRegisterClass(TFinancialStatementSendWeb);
   UnRegisterClass(TFinancialSendWeb);
   UnRegisterClass(TInvoiceSendWeb);
-  UnRegisterClass(TInvoiceMerchandiseSendWeb);
+  UnRegisterClass(TInvoiceMerchandiseSaleSendWeb);     // Rodada 2 (D11)
+  UnRegisterClass(TInvoiceMerchandisePurchaseSendWeb); // Rodada 2 (D11)
+  UnRegisterClass(TInvoiceMerchandiseAdjustSendWeb);   // Rodada 2 (D11)
   UnRegisterClass(TInvoiceRectificationSendWeb);
   UnRegisterClass(TInvoiceReturn55SendWeb);
   UnRegisterClass(TInvoiceReturn65SendWeb);
   UnRegisterClass(TInvoiceReturnServiceSendWeb); // Patch 04 (C3)
+  UnRegisterClass(TInvoiceServiceSendWeb); // Rodada 2: processo de servico
   UnRegisterClass(TMeasureSendWeb);
   UnRegisterClass(TMerchandiseSendWeb);
-  UnRegisterClass(TOrderPurchaseSendWeb);
-  UnRegisterClass(TOrderSaleSendWeb);
-  UnRegisterClass(TOrderStockAdjustSendWeb);
   UnRegisterClass(TPackageSendWeb);
   UnRegisterClass(TPriceSendWeb);
   UnRegisterClass(TPriceListSendWeb);
   UnRegisterClass(TPromotionSendWeb);
   UnRegisterClass(TProviderSendWeb);
   UnRegisterClass(TSalesManSendWeb);
+  UnRegisterClass(TServiceSendWeb); // notas mercadoria x servico (D2)
   UnRegisterClass(TStockBalanceSendWeb);
   UnRegisterClass(TStockListSendWeb);
-  UnRegisterClass(TStockStatementSendWeb);
+  //UnRegisterClass(TStockStatementSendWeb); // comentado 2026-08-09 (Valdo): nao enviar por enquanto
   UnRegisterClass(TUserSendWeb); // indexacao de usuarios (2026-07-26)
 
 

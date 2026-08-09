@@ -49,6 +49,7 @@ Type
     procedure getList;
     function delete:Boolean;
     procedure getListByNF;
+    procedure getListByNFPorNatureza(CodigoNota: Integer; ApenasServico: Boolean);
     procedure deleteByPedido;
     procedure getById;
     procedure clear;
@@ -331,6 +332,50 @@ begin
                       ' ORDER BY ITF_CODIGO '));
 
       ParamByName('NFL_CODIGO').AsInteger := Registro.CodigoNota;
+      Active := True;
+      FetchAll;
+      First;
+      Lista.Clear;
+      while not eof do
+      Begin
+        LITem := TItensNFL.Create;
+        get(Lc_Qry,LITem);
+        Lista.add(LITem);
+        next;
+      end;
+      Close;
+    end;
+  finally
+    FinalizaQuery(Lc_Qry);
+  end;
+end;
+
+procedure TControllerItensNFL.getListByNFPorNatureza(CodigoNota: Integer;
+  ApenasServico: Boolean);
+var
+  Lc_Qry : TIBQuery;
+  LITem : TItensNFL;
+begin
+  // Notas Mercadoria x Servico (D6 de prompt_notas_mercadoria_servico.md):
+  // itens filtrados pela natureza do produto — ApenasServico=True traz so
+  // PRO_TIPO='S' (kind Service na web), False traz o restante (kind Sale).
+  // O getListByNF original fica PRESERVADO (outros fluxos o usam).
+  Lc_Qry := GeraQuery;
+  try
+    with Lc_Qry do
+    Begin
+      sql.add(concat('SELECT I.* ',
+                      'FROM tb_itens_nfl I ',
+                      '   INNER JOIN TB_PRODUTO ',
+                      '   ON (PRO_CODIGO = I.ITF_CODPRO) ',
+                      'WHERE ITF_CODNFL=:NFL_CODIGO '));
+      if ApenasServico then
+        sql.add(' AND (PRO_TIPO = ''S'') ')
+      else
+        sql.add(' AND (PRO_TIPO <> ''S'') ');
+      sql.add(' ORDER BY ITF_CODIGO ');
+
+      ParamByName('NFL_CODIGO').AsInteger := CodigoNota;
       Active := True;
       FetchAll;
       First;
