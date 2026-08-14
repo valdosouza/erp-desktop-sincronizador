@@ -41,6 +41,9 @@ Type
     FFIN_COND_ESPECIAIS : String;
     FFIN_DT_REPROGRAMADA:  TDATE;
     FFIN_AUTORIZADO: String;
+    FDELETED: String;
+    function getDeleted: String;
+    procedure setFDELETED(const Value: String);
 
     procedure setFCODIGO( Value : INTEGER );
     procedure setFCODEMP( Value : INTEGER );
@@ -169,11 +172,30 @@ Type
     [FieldName('FIN_AUTORIZADO')]
     property Autorizado: String read FFIN_AUTORIZADO write setFFIN_AUTORIZADO;
 
+    // Soft delete universal (decisao 8): getter normalizado - 'S' apagado,
+    // qualquer outra coisa (inclusive NULL/vazio) = 'N'. Substitui o antigo
+    // DM.GetDeletedFlag nas classes *_send_web (Valdo, 2026-08-10).
+    [FieldName('DELETED')]
+    property Deleted: String read getDeleted write setFDELETED;
+
   End;
 
 implementation
 
 { TFinanceiro }
+
+function TFinanceiro.getDeleted: String;
+begin
+  if (FDELETED) = 'S' then
+    Result := 'S'
+  else
+    Result := 'N';
+end;
+
+procedure TFinanceiro.setFDELETED(const Value: String);
+begin
+  FDELETED := Value;
+end;
 
 procedure TFinanceiro.setFBAIXA(Value: String);
 begin

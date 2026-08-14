@@ -227,6 +227,7 @@ begin
                 '    NFC_ARQUIVO, ',
                 '    NFC_MOTIVO, ',
                 '    NFC_CODMHA, ',
+                '    R.DELETED, ',
                 '    N.nfl_serie NFC_SERIE, ',
                 '    N.nfl_numero NFC_NUMERO ',
                 'FROM tb_retorno_nfc R ',

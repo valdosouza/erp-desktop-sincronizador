@@ -123,8 +123,8 @@ begin
       // Contrato /merchandise/sincronize: id = PRO_CODIGO ✅; tb_institution_id
       // NÃO viaja (D12) — resolvido pela API key no servidor.
       LcJson.AddPair('id', TJSONNumber.Create(FCtrl.Registro.Codigo));
-      // decisao 8: le o DELETED real da tabela
-      LcJson.AddPair('deleted', DM.GetDeletedFlag('TB_PRODUTO', 'PRO_CODIGO', FCodigo));
+      // decisao 8: DELETED real da tabela, direto do model (getter normalizado)
+      LcJson.AddPair('deleted', FCtrl.Registro.Deleted);
 
       LcProduct := TJSONObject.Create;
       LcProduct.AddPair('description', FCtrl.Obj.Produto.Descricao);

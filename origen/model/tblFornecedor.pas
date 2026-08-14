@@ -11,6 +11,9 @@ Type
   private
     FFOR_ATIVO: String;
     FFOR_CODEMP: Integer;
+    FDELETED: String;
+    function getDeleted: String;
+    procedure setFDELETED(const Value: String);
 
     procedure setFFOR_CODEMP( Value : INTEGER);
     procedure setFFOR_ATIVO( Value : String);
@@ -23,6 +26,12 @@ Type
     [FieldName('FOR_ATIVO')]
     property Ativo: String read FFOR_ATIVO write setFFOR_ATIVO;
 
+    // Soft delete universal (decisao 8): getter normalizado - 'S' apagado,
+    // qualquer outra coisa (inclusive NULL/vazio) = 'N'. Substitui o antigo
+    // DM.GetDeletedFlag nas classes *_send_web (Valdo, 2026-08-10).
+    [FieldName('DELETED')]
+    property Deleted: String read getDeleted write setFDELETED;
+
 
   End;
 
@@ -30,6 +39,19 @@ implementation
 
 
 { TFornecedor }
+
+function TFornecedor.getDeleted: String;
+begin
+  if (FDELETED) = 'S' then
+    Result := 'S'
+  else
+    Result := 'N';
+end;
+
+procedure TFornecedor.setFDELETED(const Value: String);
+begin
+  FDELETED := Value;
+end;
 
 procedure TFornecedor.setFFOR_ATIVO(Value: String);
 begin

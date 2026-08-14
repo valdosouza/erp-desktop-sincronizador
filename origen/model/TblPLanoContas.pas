@@ -17,6 +17,9 @@ Type
     FPLC_TIPO: String;
     FPLC_NATUREZA: String;
     FPLC_CODPLANO: String;
+    FDELETED: String;
+    function getDeleted: String;
+    procedure setFDELETED(const Value: String);
     procedure setFPLC_CODIGO(const Value: Integer);
     procedure setFPLC_CODMHA(const Value: Integer);
     procedure setFPLC_CODPLANO(const Value: String);
@@ -52,12 +55,30 @@ Type
     [FieldName('PLC_NIVEL')]
     property Nivel: String read FPLC_NIVEL write setFPLC_NIVEL;
 
+    // Soft delete universal (decisao 8): getter normalizado - 'S' apagado,
+    // qualquer outra coisa (inclusive NULL/vazio) = 'N'. Substitui o antigo
+    // DM.GetDeletedFlag nas classes *_send_web (Valdo, 2026-08-10).
+    [FieldName('DELETED')]
+    property Deleted: String read getDeleted write setFDELETED;
 
   End;
 implementation
 
 
 { TPLanoContas }
+
+function TPLanoContas.getDeleted: String;
+begin
+  if (FDELETED) = 'S' then
+    Result := 'S'
+  else
+    Result := 'N';
+end;
+
+procedure TPLanoContas.setFDELETED(const Value: String);
+begin
+  FDELETED := Value;
+end;
 
 procedure TPLanoContas.setFPLC_CODIGO(const Value: Integer);
 begin

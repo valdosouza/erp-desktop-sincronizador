@@ -62,7 +62,8 @@ begin
         // FIN_NUMERO e o numero do documento da bill.
         LcJson.AddPair('kind', FCtrl.Registro.TipoFinanceiro);
         LcJson.AddPair('number', FCtrl.Registro.NumeroDuplicata);
-        LcJson.AddPair('deleted', DM.GetDeletedFlag('TB_FINANCEIRO', 'FIN_CODIGO', FCodigo)); // decisao 8: le o DELETED real da tabela
+        // decisao 8: DELETED real da tabela, direto do model (getter normalizado)
+        LcJson.AddPair('deleted', FCtrl.Registro.Deleted);
 
         // payment só entra quando o título está baixado (FIN_BAIXA='S') —
         // baixa espelhada como evento único; histórico de estornos do

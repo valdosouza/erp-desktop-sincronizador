@@ -47,8 +47,8 @@ begin
     LcJson := TJSONObject.Create;
     try
       LcJson.AddPair('description', FCtrl.Registro.Descricao);
-      // decisao 8: le o DELETED real da tabela
-      LcJson.AddPair('deleted', DM.GetDeletedFlag('TB_MARCA_PRODUTO', 'MRC_CODIGO', FCodigo));
+      // decisao 8: DELETED real da tabela, direto do model (getter normalizado)
+      LcJson.AddPair('deleted', FCtrl.Registro.Deleted);
       FStrJSon := LcJson.ToJSON;
     finally
       LcJson.Free;

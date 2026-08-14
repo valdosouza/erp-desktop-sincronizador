@@ -147,7 +147,8 @@ begin
     // D1: id do processo = NFL_CODIGO (tb_order.id = tb_invoice.id)
     LcJson.AddPair('id', TJSONNumber.Create(FCtrl.Registro.Codigo));
     LcJson.AddPair('terminal', TJSONNumber.Create(FTerminal));
-    LcJson.AddPair('deleted', DM.GetDeletedFlag('TB_NOTA_FISCAL', 'NFL_CODIGO', FCodigo)); // decisao 8: le o DELETED real da tabela
+    // decisao 8: DELETED real da tabela, direto do model (getter normalizado)
+    LcJson.AddPair('deleted', FCtrl.Registro.Deleted);
 
     AddOrderBlock(LcJson);
     AddRamoPedido(LcJson);

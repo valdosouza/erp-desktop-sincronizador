@@ -12,6 +12,9 @@ Type
     FEMB_DESCRICAO: String;
     FEMB_CODIGO: Integer;
     FEMB_ABREVIATURA: String;
+    FDELETED: String;
+    function getDeleted: String;
+    procedure setFDELETED(const Value: String);
     procedure setFEMB_ABREVIATURA(const Value: String);
     procedure setFEMB_CODIGO(const Value: Integer);
     procedure setFEMB_DESCRICAO(const Value: String);
@@ -28,12 +31,31 @@ Type
     [FieldName('EMB_ABREVIATURA')]
     property Abreviatura: String read FEMB_ABREVIATURA write setFEMB_ABREVIATURA;
 
+    // Soft delete universal (decisao 8): getter normalizado - 'S' apagado,
+    // qualquer outra coisa (inclusive NULL/vazio) = 'N'. Substitui o antigo
+    // DM.GetDeletedFlag nas classes *_send_web (Valdo, 2026-08-10).
+    [FieldName('DELETED')]
+    property Deleted: String read getDeleted write setFDELETED;
+
   End;
 
 implementation
 
 
 { TEmbalagem }
+
+function TEmbalagem.getDeleted: String;
+begin
+  if (FDELETED) = 'S' then
+    Result := 'S'
+  else
+    Result := 'N';
+end;
+
+procedure TEmbalagem.setFDELETED(const Value: String);
+begin
+  FDELETED := Value;
+end;
 
 procedure TEmbalagem.setFEMB_ABREVIATURA(const Value: String);
 begin

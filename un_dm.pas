@@ -1,4 +1,4 @@
-unit un_dm;
+﻿unit un_dm;
 
 interface
 
@@ -56,6 +56,7 @@ type
     procedure EnforceSeqCatalogo;
     procedure EnsureDeletedColumns;
     procedure EnsureExternalCode;
+    procedure EnsureColunasNovas;
     procedure EnsureCategoryTable;
     procedure EnsureTriggers;
     // Conversao TB_GRUPOS/TB_SUBGRUPOS -> TB_CATEGORY (Valdo, 2026-08-01):
@@ -80,9 +81,9 @@ type
     // *Document (customerDocument/salesmanDocument/providerDocument/...).
     // '' quando o código é 0/inexistente/sem documento cadastrado.
     function GetDocumentByEmpCodigo(pCodigoEmpresa: Integer): String;
-    // Le o flag DELETED real do registro (decisao 8) - usado pelas classes
-    // *_send_web para montar o payload; 'N' quando registro/coluna ausente.
-    function GetDeletedFlag(const pTabela, pCampoChave: String; pCodigo: Integer): String;
+    // Flag DELETED (decisao 8): lido direto do model de cada classe
+    // *_send_web (property Deleted, getter normalizado) - o antigo
+    // GetDeletedFlag foi aposentado em 2026-08-10.
     // Numero da NFS-e da nota de SERVICO (decisao Valdo 2026-08-01): na nota
     // de servico o NFL_NUMERO fica vazio - o numero real esta no RETORNO da
     // NFS-e (TB_RETORNO_NFS.NFS_NUMERO, chave NFS_CODNFL = NFL_CODIGO).
@@ -569,6 +570,26 @@ begin
   End;
 end;
 
+{ Colunas novas em tabelas de banco antigo (Valdo, 2026-08-14): a preparacao
+  do banco garante os campos antes da sincronia (mesmo padrao CampoExiste
+  dos demais passos). Campo novo que faltar em cliente antigo entra AQUI. }
+procedure TDM.EnsureColunasNovas;
+begin
+  // TB_TABELA_PRECO
+  if not CampoExiste('TB_TABELA_PRECO','UPDATE_AT') then
+    ExecComando('ALTER TABLE TB_TABELA_PRECO ADD UPDATE_AT TIMESTAMP');
+
+  if not CampoExiste('TB_TABELA_PRECO','TPR_CASA_DECIMAL') then
+    ExecComando('ALTER TABLE TB_TABELA_PRECO ADD TPR_CASA_DECIMAL INTEGER');
+
+  if not CampoExiste('TB_TABELA_PRECO','TPR_LOJISTA') then
+    ExecComando('ALTER TABLE TB_TABELA_PRECO ADD TPR_LOJISTA CHAR(1)');
+
+  // TB_ESTOQUE
+  if not CampoExiste('TB_ESTOQUE','UPDATE_AT') then
+    ExecComando('ALTER TABLE TB_ESTOQUE ADD UPDATE_AT TIMESTAMP');
+end;
+
 { TB_CATEGORY local + GN_CATEGORY + TB_PRODUTO.PRO_CODCAT (conversao de
   categorias, Valdo 2026-08-01): o modelo novo categoriza produto por
   TB_CATEGORY (mesma forma da web - arvore por POSIT_LEVEL, caminho
@@ -745,8 +766,8 @@ Var
       try
         SQL.Text :=
           'INSERT INTO TB_CATEGORY ' +
-          '(ID, TB_INSTITUTE_ID, DESCRIPTION, POSIT_LEVEL, KIND, ENABLED, UPDATE_AT, DELETED) ' +
-          'VALUES (:ID, 1, :DESCRIPTION, :POSIT_LEVEL, ''P'', :ENABLED, CURRENT_TIMESTAMP, :DELETED)';
+          '(ID, TB_INSTITUTE_ID, DESCRIPTION, POSIT_LEVEL, KIND, ENABLED, DELETED) ' +
+          'VALUES (:ID, 1, :DESCRIPTION, :POSIT_LEVEL, ''P'', :ENABLED, :DELETED)';
         // TB_INSTITUTE_ID = 1: valor LOCAL (mesmo das rotinas existentes -
         // tas_config/Fc_GrupoToCategoria); nao viaja no /category/sincronize
         // (D12 - o servidor deriva a institution da API key). KIND 'P' =
@@ -1023,6 +1044,7 @@ begin
   EnsureCategoryTable;         // TB_CATEGORY + GN + PRO_CODCAT (antes das triggers)
   EnsureDeletedColumns;        // passo 5 - decisao 8
   EnsureExternalCode;
+  EnsureColunasNovas;          // TB_TABELA_PRECO + TB_ESTOQUE (2026-08-14)
   EnsureTriggers;              // passo 6 - decisoes 5/6/7
   // Passos CONDICIONAIS (Valdo, 2026-08-09 - 2a correcao no mesmo dia):
   // conversao de categoria E limpeza da fila SO rodam no clique manual de
@@ -1038,23 +1060,6 @@ begin
     LimpaFilaSincroniaDoBootstrap; // por ultimo - zera o que a conversao enfileirou
   End;
   BootstrapOk := True;
-end;
-
-function TDM.GetDeletedFlag(const pTabela, pCampoChave: String; pCodigo: Integer): String;
-begin
-  Result := 'N';
-  if pCodigo <= 0 then Exit;
-  try
-    ExecConsulta(
-      'SELECT DELETED FROM ' + pTabela +
-      ' WHERE ' + pCampoChave + ' = ' + IntToStr(pCodigo)
-    );
-    if (not Qr_Crud.Eof) and (Trim(Qr_Crud.FieldByName('DELETED').AsString) = 'S') then
-      Result := 'S';
-  except
-    // coluna/tabela ausente (banco ainda nao preparado): trata como ativo
-    Result := 'N';
-  end;
 end;
 
 function TDM.GetDocumentByEmpCodigo(pCodigoEmpresa: Integer): String;

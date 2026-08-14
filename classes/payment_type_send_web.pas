@@ -64,8 +64,8 @@ begin
       LcJson.AddPair('blockForCustomerNoLimit', 'N');
       LcJson.AddPair('maxParcels', TJSONNumber.Create(FCtrl.Registro.ParcelamentoMaximo));
       LcJson.AddPair('tef', FCtrl.Registro.HabilitaTEF);
-      // decisao 8: le o DELETED real da tabela
-      LcJson.AddPair('deleted', DM.GetDeletedFlag('TB_FORMAPAGTO', 'FPT_CODIGO', FCodigo));
+      // decisao 8: DELETED real da tabela, direto do model (getter normalizado)
+      LcJson.AddPair('deleted', FCtrl.Registro.Deleted);
       FStrJson := LcJson.ToJSON;
     finally
       LcJson.Free;

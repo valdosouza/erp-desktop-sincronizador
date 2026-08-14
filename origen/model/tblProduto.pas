@@ -1,4 +1,4 @@
-unit tblProduto;
+ï»¿unit tblProduto;
 
 interface
 
@@ -66,6 +66,9 @@ Type
     FPRO_SEND_WEB: String;
     FPRO_VL_CUSTO_LAST: Real;
     FPRO_IAT: String;
+    FDELETED: String;
+    function getDeleted: String;
+    procedure setFDELETED(const Value: String);
     procedure setFINDESCALA(const Value: String);
     procedure setFPRO_ALTURA(const Value: Real);
     procedure setFPRO_APLICACAO(const Value: String);
@@ -130,7 +133,7 @@ Type
     [FieldName('PRO_CODIGO')]
     property Codigo: Integer read FPRO_CODIGO write setFPRO_CODIGO;
 
-    //[KeyField('PRO_CODMHA')] retirado pois a sequencia é a mesma para todas os estabelecimentos
+    //[KeyField('PRO_CODMHA')] retirado pois a sequencia ï¿½ a mesma para todas os estabelecimentos
     [FieldName('PRO_CODMHA')]
     property CodigoEstabelecimento: Integer read FPRO_CODMHA write setFPRO_CODMHA;
 
@@ -300,6 +303,12 @@ Type
     [FieldName('PRO_IAT')]
     property IAT: String read FPRO_IAT write setFPRO_IAT;
 
+    // Soft delete universal (decisao 8): getter normalizado - 'S' apagado,
+    // qualquer outra coisa (inclusive NULL/vazio) = 'N'. Substitui o antigo
+    // DM.GetDeletedFlag nas classes *_send_web (Valdo, 2026-08-10).
+    [FieldName('DELETED')]
+    property Deleted: String read getDeleted write setFDELETED;
+
   End;
 
 implementation
@@ -307,6 +316,19 @@ implementation
 
 
 { TProduto }
+
+function TProduto.getDeleted: String;
+begin
+  if (FDELETED) = 'S' then
+    Result := 'S'
+  else
+    Result := 'N';
+end;
+
+procedure TProduto.setFDELETED(const Value: String);
+begin
+  FDELETED := Value;
+end;
 
 procedure TProduto.setFadd_days_available(const Value: Integer);
 begin

@@ -172,6 +172,7 @@ begin
                 '   NFE_NOTA_FIM, ',
                 '   NFE_MOTIVO, ',
                 '   NFE_CODMHA, ',
+                '   R.DELETED, ',
                 '   n.nfl_serie NFE_SERIE ',
                 'FROM tb_retorno_nfe R ',
                 '  INNER JOIN tb_nota_fiscal N ',

@@ -78,7 +78,8 @@ begin
       LcJson.AddPair('paymentTypeDescription', FCtrl.FormaPagto.Registro.Descricao);
       LcJson.AddPair('financialPlansIdCre', TJSONNumber.Create(FCtrl.Registro.PL_Credito));
       LcJson.AddPair('financialPlansIdDeb', TJSONNumber.Create(FCtrl.Registro.PL_Debito));
-      LcJson.AddPair('deleted', DM.GetDeletedFlag('TB_MOVIM_FINANCEIRO', 'MVF_CODIGO', FCodigo)); // decisao 8: le o DELETED real da tabela
+      // decisao 8: DELETED real da tabela, direto do model (getter normalizado)
+      LcJson.AddPair('deleted', FCtrl.Registro.Deleted);
 
       // AUTOR (prompt_indexacao_usuario_firebird.md, decisao 6): MVF_CODUSU
       // resolvido pela cascata; sem referencia o bloco nao viaja

@@ -46,6 +46,9 @@ Type
     FCLB_TIT_ELEITOR: String;
     FCLB_UF: String;
     FCLB_CELULAR: String;
+    FDELETED: String;
+    function getDeleted: String;
+    procedure setFDELETED(const Value: String);
     procedure setFCLB_ADMISSAO(const Value: TDate);
     procedure setFCLB_AQ_COM_SRV(const Value: Real);
     procedure setFCLB_AQ_COM_VDA(const Value: Real);
@@ -164,12 +167,31 @@ Type
     [FieldName('CLB_CALC_COM_SRV')]
     property ComissaoPorServico: String read FCLB_CALC_COM_SRV write setFCLB_CALC_COM_SRV;
 
+    // Soft delete universal (decisao 8): getter normalizado - 'S' apagado,
+    // qualquer outra coisa (inclusive NULL/vazio) = 'N'. Substitui o antigo
+    // DM.GetDeletedFlag nas classes *_send_web (Valdo, 2026-08-10).
+    [FieldName('DELETED')]
+    property Deleted: String read getDeleted write setFDELETED;
+
 
   End;
 
 implementation
 
 { TColaborador }
+
+function TColaborador.getDeleted: String;
+begin
+  if (FDELETED) = 'S' then
+    Result := 'S'
+  else
+    Result := 'N';
+end;
+
+procedure TColaborador.setFDELETED(const Value: String);
+begin
+  FDELETED := Value;
+end;
 
 procedure TColaborador.setFCLB_ADMISSAO(const Value: TDate);
 begin

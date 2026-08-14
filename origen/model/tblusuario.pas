@@ -26,6 +26,9 @@ Type
     FUSU_LGN_EMAIL: String;
     FUSU_AUTH_CARD: String;
     FUSU_NOTIFICA: String;
+    FDELETED: String;
+    function getDeleted: String;
+    procedure setFDELETED(const Value: String);
     procedure setFUSU_ASSINATURA(const Value: String);
     procedure setFUSU_ATIVO(const Value: String);
     procedure setFUSU_CODIGO(const Value: Integer);
@@ -90,11 +93,30 @@ Type
 
     [FieldName('USU_AUTH_CARD')]
     property CartaoAutorizacao: String read FUSU_AUTH_CARD write setFUSU_AUTH_CARD;
+
+    // Soft delete universal (decisao 8): getter normalizado - 'S' apagado,
+    // qualquer outra coisa (inclusive NULL/vazio) = 'N'. Substitui o antigo
+    // DM.GetDeletedFlag nas classes *_send_web (Valdo, 2026-08-10).
+    [FieldName('DELETED')]
+    property Deleted: String read getDeleted write setFDELETED;
   End;
 
 implementation
 
 { TUsuario }
+
+function TUsuario.getDeleted: String;
+begin
+  if (FDELETED) = 'S' then
+    Result := 'S'
+  else
+    Result := 'N';
+end;
+
+procedure TUsuario.setFDELETED(const Value: String);
+begin
+  FDELETED := Value;
+end;
 
 procedure TUsuario.setFUSU_ASSINATURA(const Value: String);
 begin

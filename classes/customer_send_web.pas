@@ -1,4 +1,4 @@
-unit customer_send_web;
+﻿unit customer_send_web;
 
 interface
 
@@ -247,8 +247,8 @@ begin
         LcEntityTax.AddPair('autoSendInvoiceJustXml', FCtrl.Registro.EnviarSomenteXML);
         LcJson.AddPair('entityTax', LcEntityTax);
 
-        // decisao 8: le o DELETED real da tabela
-        LcJson.AddPair('deleted', DM.GetDeletedFlag('TB_CLIENTE', 'CLI_CODEMP', FCodigo));
+        // decisao 8: DELETED real da tabela, direto do model (getter normalizado)
+        LcJson.AddPair('deleted', FCtrl.Registro.Deleted);
 
         FStrJson := LcJson.ToJSON;
       Finally

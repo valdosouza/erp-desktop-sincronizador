@@ -28,6 +28,9 @@ Type
     FMVF_CODUSU: Integer;
     FMVF_TIPO: String;
     FMVF_DATA: TDate;
+    FDELETED: String;
+    function getDeleted: String;
+    procedure setFDELETED(const Value: String);
 
 
     procedure setFMVF_CODCTB(const Value: Integer);
@@ -110,11 +113,30 @@ Type
     [FieldName('MVF_CODMHA')]
     property Estabelecimento: Integer read FMVF_CODMHA write setFMVF_CODMHA;
 
+    // Soft delete universal (decisao 8): getter normalizado - 'S' apagado,
+    // qualquer outra coisa (inclusive NULL/vazio) = 'N'. Substitui o antigo
+    // DM.GetDeletedFlag nas classes *_send_web (Valdo, 2026-08-10).
+    [FieldName('DELETED')]
+    property Deleted: String read getDeleted write setFDELETED;
+
 	End;
 
 implementation
 
 { TMovimentoFinanceiro }
+
+function TMovimentoFinanceiro.getDeleted: String;
+begin
+  if (FDELETED) = 'S' then
+    Result := 'S'
+  else
+    Result := 'N';
+end;
+
+procedure TMovimentoFinanceiro.setFDELETED(const Value: String);
+begin
+  FDELETED := Value;
+end;
 
 procedure TMovimentoFinanceiro.setFMVF_CODCTB(const Value: Integer);
 begin

@@ -23,6 +23,9 @@ Type
     FNFS_LOTE: Integer;
     FNFS_RPS: Integer;
     FNFS_PROTOCOLO: String;
+    FDELETED: String;
+    function getDeleted: String;
+    procedure setFDELETED(const Value: String);
 
     procedure setFCODNFL(Value    : INTEGER);
     procedure setFNUMERO(Value    : String);
@@ -85,11 +88,30 @@ Type
     [FieldName('NFS_CODMHA')]
     property CodigoEstabelecimento: Integer read FCODMHA write setFCODMHA;
 
+    // Soft delete universal (decisao 8): getter normalizado - 'S' apagado,
+    // qualquer outra coisa (inclusive NULL/vazio) = 'N'. Substitui o antigo
+    // DM.GetDeletedFlag nas classes *_send_web (Valdo, 2026-08-10).
+    [FieldName('DELETED')]
+    property Deleted: String read getDeleted write setFDELETED;
+
   End;
 
 implementation
 
 { TRetornoNFS }
+
+function TRetornoNFS.getDeleted: String;
+begin
+  if (FDELETED) = 'S' then
+    Result := 'S'
+  else
+    Result := 'N';
+end;
+
+procedure TRetornoNFS.setFDELETED(const Value: String);
+begin
+  FDELETED := Value;
+end;
 
 procedure TRetornoNFS.setFARQUIVO(Value: String);
 begin

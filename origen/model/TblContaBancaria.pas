@@ -24,6 +24,9 @@ Type
     FCtb_Ag_Dv: String;
     FCtb_Agencia: String;
     FCtb_Vl_Limite: Real;
+    FDELETED: String;
+    function getDeleted: String;
+    procedure setFDELETED(const Value: String);
     procedure setFCtb_Ag_Dv(const Value: String);
     procedure setFCtb_Agencia(const Value: String);
     procedure setFCtb_Cc_Dv(const Value: String);
@@ -84,12 +87,31 @@ Type
     [FieldName('Ctb_Cc_Dv')]
     property DigitoContaCorrente: String read FCtb_Cc_Dv write setFCtb_Cc_Dv;
 
+    // Soft delete universal (decisao 8): getter normalizado - 'S' apagado,
+    // qualquer outra coisa (inclusive NULL/vazio) = 'N'. Substitui o antigo
+    // DM.GetDeletedFlag nas classes *_send_web (Valdo, 2026-08-10).
+    [FieldName('DELETED')]
+    property Deleted: String read getDeleted write setFDELETED;
+
   End;
 
   implementation
 
 
 { TContaBancaria }
+
+function TContaBancaria.getDeleted: String;
+begin
+  if (FDELETED) = 'S' then
+    Result := 'S'
+  else
+    Result := 'N';
+end;
+
+procedure TContaBancaria.setFDELETED(const Value: String);
+begin
+  FDELETED := Value;
+end;
 
 procedure TContaBancaria.setFCtb_Agencia(const Value: String);
 begin

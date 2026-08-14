@@ -53,8 +53,8 @@ begin
       LcJson.AddPair('merchandiseId', TJSONNumber.Create(FCtrl.Registro.CodigoProduto));
       LcJson.AddPair('quantity', TJSONNumber.Create(FCtrl.Registro.QtdeDisp));
       LcJson.AddPair('minimum', TJSONNumber.Create(FCtrl.Registro.QtdeMinima));
-      // decisao 8: le o DELETED real da tabela
-      LcJson.AddPair('deleted', DM.GetDeletedFlag('TB_ESTOQUE', 'EST_CODIGO', FCodigo));
+      // decisao 8: DELETED real da tabela, direto do model (getter normalizado)
+      LcJson.AddPair('deleted', FCtrl.Registro.Deleted);
       FStrJSon := LcJson.ToJSON;
     finally
       LcJson.Free;

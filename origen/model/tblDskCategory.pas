@@ -14,6 +14,9 @@ Type
     FId: Integer;
     Ftb_institution_id: Integer;
     Fkind: String;
+    FDELETED: String;
+    function getDeleted: String;
+    procedure setFDELETED(const Value: String);
     procedure setFdescription(const Value: String);
     procedure setFenabled(const Value: String);
     procedure setFId(const Value: Integer);
@@ -42,12 +45,31 @@ Type
     [FieldName('ENABLED')]
     property Ativo: String read Fenabled write setFenabled;
 
+    // Soft delete universal (decisao 8): getter normalizado - 'S' apagado,
+    // qualquer outra coisa (inclusive NULL/vazio) = 'N'. Substitui o antigo
+    // DM.GetDeletedFlag nas classes *_send_web (Valdo, 2026-08-10).
+    [FieldName('DELETED')]
+    property Deleted: String read getDeleted write setFDELETED;
+
   End;
 
 
 implementation
 
 { TDskCategory }
+
+function TDskCategory.getDeleted: String;
+begin
+  if (FDELETED) = 'S' then
+    Result := 'S'
+  else
+    Result := 'N';
+end;
+
+procedure TDskCategory.setFDELETED(const Value: String);
+begin
+  FDELETED := Value;
+end;
 
 procedure TDskCategory.setFdescription(const Value: String);
 begin

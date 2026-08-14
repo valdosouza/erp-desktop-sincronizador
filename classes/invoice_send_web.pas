@@ -278,7 +278,8 @@ begin
     LcJson.AddPair('id', TJSONNumber.Create(FCtrl.ObjInvoice.Nota.Codigo));
     LcJson.AddPair('terminal', TJSONNumber.Create(FTerminal));
     AddInvoiceBaseFields(LcJson);
-    LcJson.AddPair('deleted', DM.GetDeletedFlag('TB_NOTA_FISCAL', 'NFL_CODIGO', FCodigo)); // decisao 8: le o DELETED real da tabela
+    // decisao 8: DELETED real da tabela, direto do model (getter normalizado)
+    LcJson.AddPair('deleted', FCtrl.Registro.Deleted);
 
     FStrJson := LcJson.ToJSON;
   Finally

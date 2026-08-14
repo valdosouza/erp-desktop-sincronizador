@@ -23,6 +23,9 @@ Type
     FTPR_ATIVA: String;
     FTPR_MAR_PRIORITARIA: String;
     FTPR_MAR_VIA_ESCALA: Real;
+    FDELETED: String;
+    function getDeleted: String;
+    procedure setFDELETED(const Value: String);
     procedure setFTPR_CODEMP(const Value: Integer);
     procedure setFTPR_CODIGO(const Value: Integer);
     procedure setFTPR_MAR_LRC(const Value: Real);
@@ -85,6 +88,12 @@ Type
     [FieldName('TPR_MAR_VIA_ESCALA')]
     property MargemViaEscala: Real read FTPR_MAR_VIA_ESCALA write setFTPR_MAR_VIA_ESCALA;
 
+    // Soft delete universal (decisao 8): getter normalizado - 'S' apagado,
+    // qualquer outra coisa (inclusive NULL/vazio) = 'N'. Substitui o antigo
+    // DM.GetDeletedFlag nas classes *_send_web (Valdo, 2026-08-10).
+    [FieldName('DELETED')]
+    property Deleted: String read getDeleted write setFDELETED;
+
   End;
 
 implementation
@@ -92,6 +101,19 @@ implementation
 
 
 { TTabelaPreco }
+
+function TTabelaPreco.getDeleted: String;
+begin
+  if (FDELETED) = 'S' then
+    Result := 'S'
+  else
+    Result := 'N';
+end;
+
+procedure TTabelaPreco.setFDELETED(const Value: String);
+begin
+  FDELETED := Value;
+end;
 
 procedure TTabelaPreco.setFTPR_ATIVA(const Value: String);
 begin

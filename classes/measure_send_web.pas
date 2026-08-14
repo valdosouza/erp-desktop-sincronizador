@@ -51,8 +51,8 @@ begin
       LcJson.AddPair('abbreviation', FCtrl.Registro.Abreviatura);
       // MED_ESCALA é String no Firebird (ex.: '1') — convertido para número.
       LcJson.AddPair('escale', TJSONNumber.Create(StrToIntDef(FCtrl.Registro.Escala, 1)));
-      // decisao 8: le o DELETED real da tabela
-      LcJson.AddPair('deleted', DM.GetDeletedFlag('TB_MEDIDA', 'MED_CODIGO', FCodigo));
+      // decisao 8: DELETED real da tabela, direto do model (getter normalizado)
+      LcJson.AddPair('deleted', FCtrl.Registro.Deleted);
       FStrJson := LcJson.ToJSON;
     finally
       LcJson.Free;

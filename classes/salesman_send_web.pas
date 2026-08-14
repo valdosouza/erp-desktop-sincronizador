@@ -258,8 +258,8 @@ begin
         LcSalesman.AddPair('flexValue', TJSONNumber.Create(0));
         LcJson.AddPair('salesman', LcSalesman);
 
-        // decisao 8: le o DELETED real da tabela
-        LcJson.AddPair('deleted', DM.GetDeletedFlag('TB_COLABORADOR', 'CLB_CODIGO', FCodigo));
+        // decisao 8: DELETED real da tabela, direto do model (getter normalizado)
+        LcJson.AddPair('deleted', FCtrl.Registro.Deleted);
 
         FStrJSon := LcJson.ToJSON;
       Finally

@@ -52,8 +52,8 @@ begin
       LcJson.AddPair('modality', FCtrl.Registro.Modalidade);
       LcJson.AddPair('aliqProfit', TJSONNumber.Create(FCtrl.Registro.MargemLucro));
       LcJson.AddPair('published', FCtrl.Registro.Ativa);
-      // decisao 8: le o DELETED real da tabela
-      LcJson.AddPair('deleted', DM.GetDeletedFlag('TB_TABELA_PRECO', 'TPR_CODIGO', FCodigo));
+      // decisao 8: DELETED real da tabela, direto do model (getter normalizado)
+      LcJson.AddPair('deleted', FCtrl.Registro.Deleted);
       FStrJson := LcJson.ToJSON;
     finally
       LcJson.Free;

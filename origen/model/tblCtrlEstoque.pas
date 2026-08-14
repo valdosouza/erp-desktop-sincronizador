@@ -21,6 +21,9 @@ Type
     FCET_DATA: TDate;
     FCET_TIPO: String;
     FCET_TERMINAL: Integer;
+    FDELETED: String;
+    function getDeleted: String;
+    procedure setFDELETED(const Value: String);
     procedure setFCET_CODETS(const Value: Integer);
     procedure setFCET_CODIGO(const Value: Integer);
     procedure setFCET_CODPRO(const Value: Integer);
@@ -79,6 +82,11 @@ Type
     [FieldName('CET_TIPO')]
     property Tipo: String read FCET_TIPO write setFCET_TIPO;
 
+    // Soft delete universal (decisao 8): getter normalizado - 'S' apagado,
+    // qualquer outra coisa (inclusive NULL/vazio) = 'N'. Substitui o antigo
+    // DM.GetDeletedFlag nas classes *_send_web (Valdo, 2026-08-10).
+    [FieldName('DELETED')]
+    property Deleted: String read getDeleted write setFDELETED;
 
   End;
 
@@ -87,6 +95,19 @@ implementation
 
 
 { TCtrlEstoque }
+
+function TCtrlEstoque.getDeleted: String;
+begin
+  if (FDELETED) = 'S' then
+    Result := 'S'
+  else
+    Result := 'N';
+end;
+
+procedure TCtrlEstoque.setFDELETED(const Value: String);
+begin
+  FDELETED := Value;
+end;
 
 procedure TCtrlEstoque.setFCET_CODETS(const Value: Integer);
 begin

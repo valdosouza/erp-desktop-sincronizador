@@ -70,8 +70,8 @@ begin
       LcJson.AddPair('active', FCtrl.Obj.Promocao.Ativo);
       // TODO: Firebird (TB_PROMOTION) não tem campo equivalente a "oper" — null.
       LcJson.AddPair('oper', TJSONNull.Create);
-      // decisao 8: le o DELETED real da tabela
-      LcDeleted := DM.GetDeletedFlag('TB_PROMOTION', 'ID', FCodigo);
+      // decisao 8: DELETED real da tabela, direto do model (getter normalizado)
+      LcDeleted := FCtrl.Registro.Deleted;
       LcJson.AddPair('deleted', LcDeleted);
 
       LcItems := TJSONArray.Create;

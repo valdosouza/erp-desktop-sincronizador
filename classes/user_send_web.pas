@@ -180,8 +180,8 @@ begin
       LcUser.AddPair('active', LcAtivo);
       LcJson.AddPair('user', LcUser);
 
-      // decisao 8 da revisao do sincronizador: le o DELETED real da tabela
-      LcJson.AddPair('deleted', DM.GetDeletedFlag('TB_USUARIO', 'USU_CODIGO', FCodigo));
+      // decisao 8: DELETED real da tabela, direto do model (getter normalizado)
+      LcJson.AddPair('deleted', FCtrl.Registro.Deleted);
 
       FStrJSon := LcJson.ToJSON;
     Finally

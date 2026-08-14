@@ -934,7 +934,7 @@ begin
     Lc_Ctrl.Periodo     := FCargaPeriodo;
     Lc_Ctrl.DataInicial := FCargaDataIni;
     Lc_Ctrl.DataFinal   := FCargaDataFim;
-    Lc_Ctrl.getList;
+    Lc_Ctrl.getlistForSincronia;
     IniciaProgressoRegistros(Lc_Ctrl.Lista.Count);
     for I := 0 to Lc_Ctrl.Lista.Count -1 do
       Fc_InsertSicronia('TB_ARQUIVOS','ARQ_CODIGO',Lc_Ctrl.Lista[I].Codigo);

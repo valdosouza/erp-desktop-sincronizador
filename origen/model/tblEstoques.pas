@@ -13,6 +13,9 @@ Type
     FTPR_NOME: String;
     FTPR_CODIGO: Integer;
     FTPR_CODEMP: Integer;
+    FDELETED: String;
+    function getDeleted: String;
+    procedure setFDELETED(const Value: String);
     procedure setFTPR_CODEMP(const Value: Integer);
     procedure setFTPR_CODIGO(const Value: Integer);
     procedure setFTPR_MODALIDADE(const Value: String);
@@ -33,12 +36,30 @@ Type
     [FieldName('ETS_PRINCIPAL')]
     property Principal: String read FTPR_MODALIDADE write setFTPR_MODALIDADE;
 
+    // Soft delete universal (decisao 8): getter normalizado - 'S' apagado,
+    // qualquer outra coisa (inclusive NULL/vazio) = 'N'. Substitui o antigo
+    // DM.GetDeletedFlag nas classes *_send_web (Valdo, 2026-08-10).
+    [FieldName('DELETED')]
+    property Deleted: String read getDeleted write setFDELETED;
 
   End;
 
 implementation
 
 { TEstoques }
+
+function TEstoques.getDeleted: String;
+begin
+  if (FDELETED) = 'S' then
+    Result := 'S'
+  else
+    Result := 'N';
+end;
+
+procedure TEstoques.setFDELETED(const Value: String);
+begin
+  FDELETED := Value;
+end;
 
 procedure TEstoques.setFTPR_CODEMP(const Value: Integer);
 begin

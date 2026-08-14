@@ -196,8 +196,8 @@ begin
         LcProvider.AddPair('active', FCtrl.Registro.Ativo);
         LcJson.AddPair('provider', LcProvider);
 
-        // decisao 8: le o DELETED real da tabela
-        LcJson.AddPair('deleted', DM.GetDeletedFlag('TB_FORNECEDOR', 'FOR_CODEMP', FCodigo));
+        // decisao 8: DELETED real da tabela, direto do model (getter normalizado)
+        LcJson.AddPair('deleted', FCtrl.Registro.Deleted);
 
         FStrJson := LcJson.ToJSON;
       Finally

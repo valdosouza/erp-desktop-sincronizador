@@ -76,7 +76,8 @@ begin
         LcJson.AddPair('direction', FCtrl.Registro.operacao);
         LcJson.AddPair('quantity', TJSONNumber.Create(FCtrl.Registro.Quantidade));
         LcJson.AddPair('operation', LcOperation);
-        LcJson.AddPair('deleted', DM.GetDeletedFlag('TB_CTRL_ESTOQUE', 'CET_CODIGO', FCodigo)); // decisao 8: le o DELETED real da tabela
+        // decisao 8: DELETED real da tabela, direto do model (getter normalizado)
+        LcJson.AddPair('deleted', FCtrl.Registro.Deleted);
 
         FStrJson := LcJson.ToJSON;
       Finally

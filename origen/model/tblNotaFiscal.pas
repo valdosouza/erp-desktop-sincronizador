@@ -52,6 +52,9 @@ Type
     FNFL_CODEMP: Integer;
     FNFL_VL_ISS_RET: Real;
     FNFL_IMP_XML: String;
+    FDELETED: String;
+    function getDeleted: String;
+    procedure setFDELETED(const Value: String);
 
     procedure setFNFL_CODIGO( Value : Integer);
     procedure setFNFL_CODMHA( Value : Integer);
@@ -227,13 +230,30 @@ Type
     [FieldName('NFL_IMP_XML')]
     property XMLImportado: String read FNFL_IMP_XML write setFNFL_IMP_XML;
 
-
+    // Soft delete universal (decisao 8): getter normalizado - 'S' apagado,
+    // qualquer outra coisa (inclusive NULL/vazio) = 'N'. Substitui o antigo
+    // DM.GetDeletedFlag nas classes *_send_web (Valdo, 2026-08-10).
+    [FieldName('DELETED')]
+    property Deleted: String read getDeleted write setFDELETED;
 
   End;
 
 implementation
 
 { TNotaFiscal }
+
+function TNotaFiscal.getDeleted: String;
+begin
+  if (FDELETED) = 'S' then
+    Result := 'S'
+  else
+    Result := 'N';
+end;
+
+procedure TNotaFiscal.setFDELETED(const Value: String);
+begin
+  FDELETED := Value;
+end;
 
 procedure TNotaFiscal.setFNFL_BS_ICMS(Value: Real);
 begin

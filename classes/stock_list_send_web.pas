@@ -57,8 +57,8 @@ begin
       LcJson.AddPair('kind', TJSONNull.Create);
       // TODO: Firebird não tem coluna de terminal para estoque — 0 fixo.
       LcJson.AddPair('terminal', TJSONNumber.Create(0));
-      // decisao 8: le o DELETED real da tabela
-      LcJson.AddPair('deleted', DM.GetDeletedFlag('TB_ESTOQUES', 'ETS_CODIGO', FCodigo));
+      // decisao 8: DELETED real da tabela, direto do model (getter normalizado)
+      LcJson.AddPair('deleted', FCtrl.Registro.Deleted);
       FStrJson := LcJson.ToJSON;
     finally
       LcJson.Free;

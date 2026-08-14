@@ -15,6 +15,9 @@ Type
     FId: Integer;
     Fquantity: Real;
     FEstabelecimento: Integer;
+    FDELETED: String;
+    function getDeleted: String;
+    procedure setFDELETED(const Value: String);
     procedure setFAtivo(const Value: String);
     procedure setFDescricao(const Value: String);
     procedure setFEstabelecimento(const Value: Integer);
@@ -46,6 +49,12 @@ Type
     [FieldName('REG_ACTIVE')]
     property Ativo: String read FAtivo write setFAtivo;
 
+    // Soft delete universal (decisao 8): getter normalizado - 'S' apagado,
+    // qualquer outra coisa (inclusive NULL/vazio) = 'N'. Substitui o antigo
+    // DM.GetDeletedFlag nas classes *_send_web (Valdo, 2026-08-10).
+    [FieldName('DELETED')]
+    property Deleted: String read getDeleted write setFDELETED;
+
   End;
 
 
@@ -53,6 +62,19 @@ implementation
 
 
 { TDskPromotion }
+
+function TDskPromotion.getDeleted: String;
+begin
+  if (FDELETED) = 'S' then
+    Result := 'S'
+  else
+    Result := 'N';
+end;
+
+procedure TDskPromotion.setFDELETED(const Value: String);
+begin
+  FDELETED := Value;
+end;
 
 procedure TDskPromotion.setFAtivo(const Value: String);
 begin

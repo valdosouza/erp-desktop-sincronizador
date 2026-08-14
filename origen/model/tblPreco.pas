@@ -16,7 +16,10 @@ Type
     FPRC_MAR_LRC: Real;
     FPRC_QT_MIN: Real;
     FPRC_CODTPR: Integer;
+    FDELETED: String;
 
+    function getDeleted: String;
+    procedure setFDELETED(const Value: String);
     procedure setFPRC_CODIGO( Value : INTEGER);
     procedure setFPRC_CODTPR( Value : INTEGER);
     procedure setFPRC_CODPRO( Value : INTEGER);
@@ -50,6 +53,12 @@ Type
     [FieldName('PRC_MAR_LRC')]
     property MargemLucro: Real read FPRC_MAR_LRC write setFPRC_MAR_LRC;
 
+    // Soft delete universal (decisao 8): getter normalizado - 'S' apagado,
+    // qualquer outra coisa (inclusive NULL/vazio) = 'N'. Substitui o antigo
+    // DM.GetDeletedFlag nas classes *_send_web (Valdo, 2026-08-10).
+    [FieldName('DELETED')]
+    property Deleted: String read getDeleted write setFDELETED;
+
   End;
 
 implementation
@@ -57,6 +66,19 @@ implementation
 
 
 { TPreco }
+
+function TPreco.getDeleted: String;
+begin
+  if (FDELETED) = 'S' then
+    Result := 'S'
+  else
+    Result := 'N';
+end;
+
+procedure TPreco.setFDELETED(const Value: String);
+begin
+  FDELETED := Value;
+end;
 
 procedure TPreco.setFPRC_AQ_COM(Value: Real);
 begin

@@ -21,6 +21,9 @@ Type
     FCLI_VL_ENTREGA: Real;
     FCLI_EMAIL_NF_AUTO: String;
     FCLI_CODTPR: Integer;
+    FDELETED: String;
+    function getDeleted: String;
+    procedure setFDELETED(const Value: String);
 
 
     procedure setFCLI_CODEMP( Value : INTEGER);
@@ -75,10 +78,29 @@ Type
     [FieldName('CLI_CODTPR')]
     property TabelaPreco: Integer read FCLI_CODTPR write setFCLI_CODTPR;
 
+    // Soft delete universal (decisao 8): getter normalizado - 'S' apagado,
+    // qualquer outra coisa (inclusive NULL/vazio) = 'N'. Substitui o antigo
+    // DM.GetDeletedFlag nas classes *_send_web (Valdo, 2026-08-10).
+    [FieldName('DELETED')]
+    property Deleted: String read getDeleted write setFDELETED;
+
   End;
 
 implementation
 { TCliente }
+
+function TCliente.getDeleted: String;
+begin
+  if (FDELETED) = 'S' then
+    Result := 'S'
+  else
+    Result := 'N';
+end;
+
+procedure TCliente.setFDELETED(const Value: String);
+begin
+  FDELETED := Value;
+end;
 
 procedure TCliente.setFCLI_ATIVO(Value: String);
 begin

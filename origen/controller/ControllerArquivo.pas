@@ -1,4 +1,4 @@
-unit ControllerArquivo;
+ï»¿unit ControllerArquivo;
 
 interface
 uses IBX.IBDatabase,Classes, IBX.IBQuery, SysUtils,ControllerBase,
@@ -14,6 +14,7 @@ Type
     function getfilenameRPS(NOtaID:Integer):String;
     function getfilenameNFSE(NOtaID:Integer):String;
     function getListSQL:String;
+    function getListSQLForSincronia:String;
     function VerificaCodigoVinculoNFeArquivo(Fc_cd_Nota:Integer):Integer;
     function VerificaCodigoVinculoCartaCorrecao(Fc_cd_Nota:Integer):Integer;
     function VerificaCodigoVinculoNFCeArquivo(Fc_cd_Nota:Integer):Integer;
@@ -26,6 +27,7 @@ Type
     destructor Destroy; override;
     procedure getbyId;
     procedure getlist;
+    procedure getlistForSincronia;
     procedure getlistSimples(NFirst,NSkip:Integer);
     function getFirst:boolean;
     procedure getbyVinculo;
@@ -154,17 +156,17 @@ begin
       //Determina o nome do Arquivo
       case pReg.TipoDoArquivo of
         1:Begin
-            obj.FolderName := 'NFE';  //1 - Arquivo de XML da Nota Fiscal Eletronica Própria
+            obj.FolderName := 'NFE';  //1 - Arquivo de XML da Nota Fiscal Eletronica Prï¿½pria
             LcPos := Pos('Id="NFe', LcConteudo) + 7;
             Obj.Filename := concat(Copy(LcConteudo,LcPos,44),'-nfe.xml');
            end;
         2:Begin
-            obj.FolderName := 'CCE';  //2 - Arquivo de XML da Carta de Correção
+            obj.FolderName := 'CCE';  //2 - Arquivo de XML da Carta de Correï¿½ï¿½o
             LcPos := Pos('infEvento Id="ID', LcConteudo) + 16;
             Obj.Filename := concat(Copy(LcConteudo,LcPos,52),'-cce.xml');
           end;
         3:Begin
-            obj.FolderName := 'NFTE';  //3 - Arquivo de XML da Nota Fiscal Eletrônica de Terceiros
+            obj.FolderName := 'NFTE';  //3 - Arquivo de XML da Nota Fiscal Eletrï¿½nica de Terceiros
             LcPos := Pos('Id="NFe', LcConteudo) + 7;
             Obj.Filename := concat(Copy(LcConteudo,LcPos,44),'-nfe.xml');
           end;
@@ -174,11 +176,11 @@ begin
             Obj.Filename := concat(Copy(LcConteudo,LcPos,44),'-nfe.xml');
           end;
         5:Begin
-            obj.FolderName := 'RPSE';  //5 - Arquivo de XML do Recibo Provisorio de Serviço
+            obj.FolderName := 'RPSE';  //5 - Arquivo de XML do Recibo Provisorio de Serviï¿½o
             Obj.Filename := concat('RPS-',getfilenameRPS(Lc_Qry.FieldByName('ARQ_CODVCL').asInteger),'-nfe.xml');
           end;
         6:Begin
-            obj.FolderName := 'NFSE';  //6 - Arquivo de XML da Nota Fiscal de Serviço eletronica
+            obj.FolderName := 'NFSE';  //6 - Arquivo de XML da Nota Fiscal de Serviï¿½o eletronica
             Obj.Filename := getfilenameNFSE(Lc_Qry.FieldByName('ARQ_CODVCL').asInteger);
           End;
         7:Begin
@@ -186,7 +188,7 @@ begin
           end;
       end;
 
-      { Prepara o conteúdo binário, codificando-o como um texto }
+      { Prepara o conteï¿½do binï¿½rio, codificando-o como um texto }
       Obj.Content := String(EncodeBase64(AnsiString(LcConteudo)));
     End;
 
@@ -343,6 +345,40 @@ begin
   End;
 end;
 
+procedure TControllerArquivo.getlistForSincronia;
+var
+  Lc_Qry : TIBQuery;
+  LITem : TArquivo;
+begin
+  Lc_Qry := GeraQuery;
+  Try
+    with Lc_Qry do
+    Begin
+      sql.add( getListSQLForSincronia );
+
+      if FPeriodo then
+      Begin
+        ParamByName('DATAINI').AsDateTime := FDataInicial;
+        ParamByName('DATAFIM').AsDateTime := FDataFinal;
+      End;
+
+      Active := True;
+      FetchAll;
+      First;
+      Lista.Clear;
+      while not eof do
+      Begin
+        LITem := TArquivo.Create;
+        LITem.Codigo := Lc_Qry.FieldByName('ARQ_CODIGO').AsInteger;
+        Lista.add(LITem);
+        next;
+      end;
+    end;
+  Finally
+    FinalizaQuery(Lc_Qry);
+  End;
+end;
+
 procedure TControllerArquivo.getlistSimples(NFirst,NSkip:Integer);
 var
   Lc_Qry : TIBQuery;
@@ -391,11 +427,71 @@ begin
   End;
 end;
 
+function TControllerArquivo.getListSQLForSincronia: String;
+Var
+  LcDataStr:String;
+begin
+  LcDataStr := ' AND (NF.NFL_DT_EMISSAO BETWEEN :DATAINI AND :DATAFIM)';
+
+  Result := Concat(
+              'SELECT ',
+              '  ARQ_CODIGO ',
+              'FROM TB_ARQUIVOS aqr ',
+              '    INNER JOIN tb_retorno_nfe NFE ',
+              '    ON (NFE.nfe_codigo = AQR.arq_codvcl) ',
+              '    INNER JOIN TB_NOTA_FISCAL NF ',
+              '    ON (NF.NFL_CODIGO = NFE.nfe_codnfl) ',
+              'WHERE NF.nfl_modelo = ''55''  and aqr.arq_tipo =1 ');
+  if FPeriodo then
+    Result := Concat(Result, LcDataStr);
+
+  Result := Concat(
+              Result,
+              'UNION ALL ',
+              'SELECT ',
+              '  ARQ_CODIGO ',
+              'FROM TB_ARQUIVOS aqr ',
+              '    INNER JOIN tb_carta_correcao cc ',
+              '    ON (cc.cce_codigo = AQR.arq_codvcl) ',
+              '    INNER JOIN TB_NOTA_FISCAL NF ',
+              '    ON (NF.NFL_CODIGO = cc.cce_codnfl) ',
+              'WHERE aqr.arq_tipo =2 ');
+  if FPeriodo then
+    Result := Concat(Result, LcDataStr);
+
+  Result := Concat(
+              Result,
+              'UNION ALL ',
+              'SELECT ',
+              '  ARQ_CODIGO ',
+              'FROM TB_ARQUIVOS aqr ',
+              '    INNER JOIN TB_NOTA_FISCAL NF ',
+              '    ON (NF.NFL_CODIGO = aqr.arq_codvcl) ',
+              'WHERE aqr.arq_tipo IN (3, 6) ');
+  if FPeriodo then
+    Result := Concat(Result, LcDataStr);
+
+  Result := Concat(
+              Result,
+              'UNION ALL ',
+              'SELECT ',
+              '  ARQ_CODIGO ',
+              'FROM TB_ARQUIVOS aqr ',
+              '    INNER JOIN tb_retorno_nfc NFC ',
+              '    ON (NFC.nfc_codigo = AQR.arq_codvcl) ',
+              '    INNER JOIN TB_NOTA_FISCAL NF ',
+              '    ON (NF.NFL_CODIGO = NFC.nfc_codnfl) ',
+              'WHERE NF.nfl_modelo = ''65''  and aqr.arq_tipo =4 ');
+  if FPeriodo then
+    Result := Concat(Result, LcDataStr);
+
+end;
+
 function TControllerArquivo.getListSQL: String;
 Var
   LcDataStr:String;
 begin
-  LcDataStr := ' AND (NFL_DT_EMISSAO BETWEEN :DATAINI AND :DATAFIM)';
+  LcDataStr := ' AND (NF.NFL_DT_EMISSAO BETWEEN :DATAINI AND :DATAFIM)';
 
   Result := Concat(
               'SELECT ',
@@ -415,7 +511,7 @@ begin
 
   Result := Concat(
               Result,
-              'UNION ',
+              'UNION ALL ',
               'SELECT ',
               '  ARQ_CODIGO, ',
               '  ARQ_TIPO, ',
@@ -433,7 +529,7 @@ begin
 
   Result := Concat(
               Result,
-              'UNION ',
+              'UNION ALL ',
               'SELECT ',
               '  ARQ_CODIGO, ',
               '  ARQ_TIPO, ',
@@ -443,13 +539,13 @@ begin
               'FROM TB_ARQUIVOS aqr ',
               '    INNER JOIN TB_NOTA_FISCAL NF ',
               '    ON (NF.NFL_CODIGO = aqr.arq_codvcl) ',
-              'WHERE aqr.arq_tipo =3 ');
+              'WHERE aqr.arq_tipo IN (3, 6) ');
   if FPeriodo then
     Result := Concat(Result, LcDataStr);
 
   Result := Concat(
               Result,
-              'UNION ',
+              'UNION ALL ',
               'SELECT ',
               '  ARQ_CODIGO, ',
               '  ARQ_TIPO, ',
@@ -464,24 +560,6 @@ begin
               'WHERE NF.nfl_modelo = ''65''  and aqr.arq_tipo =4 ');
   if FPeriodo then
     Result := Concat(Result, LcDataStr);
-
-  Result := Concat(
-              Result,
-              'UNION ',
-              'SELECT ',
-              '  ARQ_CODIGO, ',
-              '  ARQ_TIPO, ',
-              '  ARQ_FORMATO, ',
-              '  ARQ_CODVCL, ',
-              '  ARQ_CHV_NFE ',
-              'FROM TB_ARQUIVOS aqr ',
-              '    INNER JOIN TB_NOTA_FISCAL NF ',
-              '    ON (NF.NFL_CODIGO = aqr.arq_codvcl) ',
-              'WHERE aqr.arq_tipo =6 '
-  );
-  if FPeriodo then
-    Result := Concat(Result, LcDataStr);
-
 end;
 
 procedure TControllerArquivo.getSincronia;
@@ -540,12 +618,12 @@ var
   Lc_Qry: TIBQuery;
 BEGIN
   {
-   1 - Arquivo de XML da Nota Fiscal Eletronica Própria
-   2 - Arquivo de XML da Carta de Correção
-   3 - Arquivo de XML da Nota Fiscal Eletrônica de Terceiros
+   1 - Arquivo de XML da Nota Fiscal Eletronica Prï¿½pria
+   2 - Arquivo de XML da Carta de Correï¿½ï¿½o
+   3 - Arquivo de XML da Nota Fiscal Eletrï¿½nica de Terceiros
    4 - Arquivo de XML da Nota Fiscal Consumidor Eletronica
-   5 - Arquivo de XML do Recibo Provisorio de Serviço
-   6 - Arquivo de XML da Nota Fiscal de Serviço eletronica
+   5 - Arquivo de XML do Recibo Provisorio de Serviï¿½o
+   6 - Arquivo de XML da Nota Fiscal de Serviï¿½o eletronica
    7 - Arquivo de XML da MDFE
   }
   Lc_Qry := GeraQuery;
@@ -583,12 +661,12 @@ var
   Lc_Qry: TIBQuery;
 BEGIN
   {
-   1 - Arquivo de XML da Nota Fiscal Eletronica Própria
-   2 - Arquivo de XML da Carta de Correção
-   3 - Arquivo de XML da Nota Fiscal Eletrônica de Terceiros
+   1 - Arquivo de XML da Nota Fiscal Eletronica Prï¿½pria
+   2 - Arquivo de XML da Carta de Correï¿½ï¿½o
+   3 - Arquivo de XML da Nota Fiscal Eletrï¿½nica de Terceiros
    4 - Arquivo de XML da Nota Fiscal Consumidor Eletronica
-   5 - Arquivo de XML do Recibo Provisorio de Serviço
-   6 - Arquivo de XML da Nota Fiscal de Serviço eletronica
+   5 - Arquivo de XML do Recibo Provisorio de Serviï¿½o
+   6 - Arquivo de XML da Nota Fiscal de Serviï¿½o eletronica
    7 - Arquivo de XML da MFDE
   }
   Lc_Qry := GeraQuery;

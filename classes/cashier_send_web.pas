@@ -63,7 +63,8 @@ begin
           LcJson.AddPair('hrEnd', TJSONNull.Create)
         else
           LcJson.AddPair('hrEnd', FormatDateTime('yyyy-mm-dd hh:nn:ss', FCtrl.Registro.Fechamento));
-        LcJson.AddPair('deleted', DM.GetDeletedFlag('TB_CASHIER', 'ID', FCodigo)); // decisao 8: le o DELETED real da tabela
+        // decisao 8: DELETED real da tabela, direto do model (getter normalizado)
+        LcJson.AddPair('deleted', FCtrl.Registro.Deleted);
 
         if DM.GetUserSyncRef(FCtrl.Registro.Usuario, LcUserDoc, LcUserExt) then
         Begin

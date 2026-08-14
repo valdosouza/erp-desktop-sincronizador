@@ -14,6 +14,9 @@ Type
     FUSERID : Integer;
     FHRBEGIN: TDateTime;
     FHREND: TDateTime;
+    FDELETED: String;
+    function getDeleted: String;
+    procedure setFDELETED(const Value: String);
 
     procedure setFID(value: Integer);
     procedure setFDTRECORD(value: TDate);
@@ -38,11 +41,30 @@ Type
     [FieldName('hr_end')]
     property Fechamento: TDateTime read FHREND write setFHREND;
 
+    // Soft delete universal (decisao 8): getter normalizado - 'S' apagado,
+    // qualquer outra coisa (inclusive NULL/vazio) = 'N'. Substitui o antigo
+    // DM.GetDeletedFlag nas classes *_send_web (Valdo, 2026-08-10).
+    [FieldName('DELETED')]
+    property Deleted: String read getDeleted write setFDELETED;
+
   End;
 
 implementation
 
 uses Un_DM;
+
+function TDskCashier.getDeleted: String;
+begin
+  if (FDELETED) = 'S' then
+    Result := 'S'
+  else
+    Result := 'N';
+end;
+
+procedure TDskCashier.setFDELETED(const Value: String);
+begin
+  FDELETED := Value;
+end;
 
 procedure TDskCashier.setFDTRECORD(value: TDAte);
 begin

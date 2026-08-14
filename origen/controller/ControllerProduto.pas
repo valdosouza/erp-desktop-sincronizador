@@ -927,6 +927,8 @@ begin
                 ));
 
       //Criei objeto contorller para produto e para menu cardapio  aqui � diferente de automatico -
+      sql.add(' and (PRO_TIPO <>''A'') ');
+      {
       if Registro.Tipo = 'P' then
         sql.add(' and (PRO_TIPO =''P'') ')
       else
@@ -934,7 +936,7 @@ begin
 
       if Registro.Internet = 'S' then
         sql.add(' AND (PRO_INTERNET = ''S'') ');
-
+      }
       if FORderby = '' then
         sql.add(' ORDER BY PRO_CODIGO ')
       else

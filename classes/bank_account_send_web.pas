@@ -86,8 +86,8 @@ begin
       else
         LcJson.AddPair('dtContract', TJSONNull.Create);
 
-      // decisao 8: le o DELETED real da tabela
-      LcJson.AddPair('deleted', DM.GetDeletedFlag('TB_CONTABANCARIA', 'CTB_CODIGO', FCodigo));
+      // decisao 8: DELETED real da tabela, direto do model (getter normalizado)
+      LcJson.AddPair('deleted', FCtrl.Registro.Deleted);
 
       FStrJSon := LcJson.ToJSON;
     Finally

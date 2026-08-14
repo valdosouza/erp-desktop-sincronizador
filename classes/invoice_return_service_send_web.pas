@@ -63,8 +63,8 @@ begin
       LcJson.AddPair('statusCode',  TJSONNumber.Create(FCtrl.Registro.CodigoSituacao));
       LcJson.AddPair('fileName',    FCtrl.Registro.Arquivo);
       LcJson.AddPair('motive',      FCtrl.Registro.Motivo);
-      // decisao 8: le o DELETED real da tabela
-      LcJson.AddPair('deleted',     DM.GetDeletedFlag('TB_RETORNO_NFS', 'NFS_CODNFL', FCodigo));
+      // decisao 8: DELETED real da tabela, direto do model (getter normalizado)
+      LcJson.AddPair('deleted',     FCtrl.Registro.Deleted);
       FStrJson := LcJson.ToJSON;
     finally
       LcJson.Free;
