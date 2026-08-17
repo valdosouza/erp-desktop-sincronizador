@@ -47,6 +47,11 @@ Type
       // Itens do processo: guarda o total (FItensNota) e refiltra a lista
       // pela natureza (PRO_TIPO) — ApenasServico=True traz so 'S'.
       procedure CarregaItens(ApenasServico: Boolean);
+      // Status do PEDIDO no dominio da WEB (Valdo, 2026-08-14): o legado
+      // guarda em PED_FATURADO um flag de FATURAMENTO ('S' faturado / 'A'
+      // em aberto); a web quer o estado do PROCESSO — 'F' fechado / 'A'
+      // aberto. Traducao no ENVIO ("quem aposenta se adapta" — D15/D22).
+      function OrderStatus: String;
       procedure AddOrderBlock(AJson: TJSONObject);
       // NomeBloco (D13): a conjugada envia DOIS arrays de itens no mesmo
       // payload — 'items' (servico) e 'saleItems' (mercadoria).
@@ -150,6 +155,17 @@ begin
   FCtrl.Pedido.Itens.getListByNFPorNatureza(FCtrl.Registro.Codigo, ApenasServico);
 end;
 
+function TInvoiceSendWeb.OrderStatus: String;
+begin
+  // 'S' (faturado no legado) = processo FECHADO na web; 'A' (em aberto)
+  // permanece 'A'. Qualquer outro conteudo segue cru — dado fora do
+  // dominio conhecido nao e inventado aqui (a web normaliza na transicao).
+  if UpperCase(Trim(FCtrl.Pedido.Registro.Faturado)) = 'S' then
+    Result := 'F'
+  else
+    Result := FCtrl.Pedido.Registro.Faturado;
+end;
+
 procedure TInvoiceSendWeb.AddOrderBlock(AJson: TJSONObject);
 Var
   LcOrder : TJSONObject;
@@ -157,7 +173,7 @@ begin
   LcOrder := TJSONObject.Create;
   LcOrder.AddPair('dtRecord', FormatDateTime('yyyy-mm-dd', FCtrl.Pedido.Registro.Data));
   LcOrder.AddPair('note', FCtrl.Pedido.Registro.Observacao);
-  LcOrder.AddPair('status', FCtrl.Pedido.Registro.Faturado);
+  LcOrder.AddPair('status', OrderStatus);
   LcOrder.AddPair('origin', 'D');
   AJson.AddPair('order', LcOrder);
 end;

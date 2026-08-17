@@ -48,7 +48,7 @@ begin
       // pagamento passou a ter endpoint próprio na onda de movimento
       // financeiro). AUTOR (prompt_indexacao_usuario_firebird.md, decisao
       // 6): o usuario do caixa viaja no bloco `user` (cascata via
-      // DM.GetUserSyncRef); sem referencia o bloco nao viaja (tb_userid
+      // DM.GetUserSyncRef); sem referencia o bloco nao viaja (tb_user_id
       // fica NULL na web).
       LcJson := TJSONObject.Create;
       Try

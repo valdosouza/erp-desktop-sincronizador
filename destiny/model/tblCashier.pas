@@ -45,7 +45,7 @@ Type
     [FieldName('dt_record')]
     property Data: TDAteTime read Fdt_record write setFdt_record;
 
-    [FieldName('tb_userid')]
+    [FieldName('tb_user_id')]
     property Usuario: Integer read Ftb_userid write setFtb_userid;
 
     [FieldName('hr_begin')]
