@@ -15,6 +15,9 @@ Type
       function GetBrandName(pCodigo: Integer): String;
       function GetPackageName(pCodigo: Integer): String;
       function GetMeasureName(pCodigo: Integer): String;
+      // D-SY5 / D-SY6 (Valdo, 2026-10-17)
+      function NormalizeIndEscala(const pValue: String): String;
+      function DecodeAplicacao(const pValue: String): String;
     protected
       procedure GenerateJson;Override;
     public
@@ -24,7 +27,7 @@ Type
 
 implementation
 
-uses un_dm;
+uses un_dm, synacode;
 
 { TGeneralWeb }
 
@@ -74,6 +77,51 @@ begin
   Finally
     LcCtrl.DisposeOf;
   End;
+end;
+
+function TMerchandiseSendWeb.NormalizeIndEscala(const pValue: String): String;
+begin
+  // D-SY5 (Valdo, 2026-10-17): INDESCALA do Firebird COMO ESTA (S/N) - antes
+  // ia 'N' fixo. Vazio ou fora de S/N vai '' = ausente -> NULL na web: o
+  // legado omite a tag indEscala da NF-e quando o campo esta vazio
+  // (StrToIndEscala do ACBr em un_geranfe3X.pas). Nunca manda valor fora de
+  // S/N (o setes-sync recusaria o produto inteiro com 400).
+  Result := UpperCase(Trim(pValue));
+  if (Result <> 'S') and (Result <> 'N') then
+    Result := '';
+end;
+
+function TMerchandiseSendWeb.DecodeAplicacao(const pValue: String): String;
+Var
+  LcRaw, LcDecoded: String;
+  I, LcLen: Integer;
+begin
+  // D-SY6 (Valdo, 2026-10-17): o legado grava PRO_APLICACAO em Base64
+  // (Un_Produtos.pas: EncodeBase64(AnsiString(texto)), synacode) e le com
+  // String(DecodeBase64(AnsiString(valor))). A web recebe o TEXTO: decodifica
+  // aqui do MESMO jeito do legado (pagina de codigo ANSI da maquina; o JSON
+  // sai em Unicode). Tolerancia: valor sem forma de Base64, ou que
+  // decodificado traz caractere de controle (fora TAB/CR/LF), segue como esta.
+  Result := pValue;
+  LcRaw := Trim(pValue);
+  LcLen := Length(LcRaw);
+  if (LcLen = 0) or ((LcLen mod 4) <> 0) then
+    Exit;
+  for I := 1 to LcLen do
+  Begin
+    if not CharInSet(LcRaw[I], ['A'..'Z', 'a'..'z', '0'..'9', '+', '/', '=']) then
+      Exit;
+    // '=' so no fim (padding de 1 ou 2 caracteres)
+    if (LcRaw[I] = '=') and (I < LcLen - 1) then
+      Exit;
+  End;
+  if (LcRaw[LcLen - 1] = '=') and (LcRaw[LcLen] <> '=') then
+    Exit;
+  LcDecoded := String(DecodeBase64(AnsiString(LcRaw)));
+  for I := 1 to Length(LcDecoded) do
+    if (Ord(LcDecoded[I]) < 32) and not CharInSet(LcDecoded[I], [#9, #10, #13]) then
+      Exit;
+  Result := LcDecoded;
 end;
 
 constructor TMerchandiseSendWeb.Create;
@@ -153,10 +201,11 @@ begin
       LcMerchandise.AddPair('print', FCtrl.Obj.Mercadoria.Imprime);
       LcMerchandise.AddPair('controlSeries', FCtrl.Obj.Mercadoria.ControlarSerie);
       LcMerchandise.AddPair('exclusiveDealer', FCtrl.Obj.Mercadoria.ExclusivoRevenda);
-      LcMerchandise.AddPair('application', FCtrl.Obj.Mercadoria.Aplicacao);
+      // D-SY6: texto decodificado (no Firebird esta em Base64)
+      LcMerchandise.AddPair('application', DecodeAplicacao(FCtrl.Obj.Mercadoria.Aplicacao));
       LcMerchandise.AddPair('composition', FCtrl.Obj.Mercadoria.TipoComposicao);
-      // TODO: Firebird não tem campo equivalente a manufSignIndScale — 'N' fixo.
-      LcMerchandise.AddPair('manufSignIndScale', 'N');
+      // D-SY5: INDESCALA real (o model ja tinha o campo; o 'N' fixo saiu)
+      LcMerchandise.AddPair('manufSignIndScale', NormalizeIndEscala(FCtrl.Registro.IndicacaoEscala));
       // Fornecedor/id_provider REMOVIDO do payload — contrato mantém NULL até a
       // Onda 4 do servidor (tb_merchandise.id_provider).
       LcJson.AddPair('merchandise', LcMerchandise);

@@ -21,6 +21,7 @@ uses/paths e testar é do Valdo. A setes-sync do outro lado JÁ está pronta e p
 | 6 | `06_notas_mercadoria_servico.md` | D1–D7 (notas M×S) | Serviço nos 3 níveis (produto/pedido/nota), filtros de natureza, bugs de catch-up. ⚠️ mecânica `[KIND]` superada pelo 08 |
 | 7 | `07_sincronia_por_processo.md` | D8–D12 | NOTA = único fato gerador; hierarquia TInvoice*; renumeração Seqs 21–24; TB_PEDIDO fora da fila |
 | 8 | `08_fila_marca_unica.md` | D13 | Marca ÚNICA no SRC_LOG (só de quem envia), filtros DISJUNTOS, ordem de serviço COMPLETA no /order-service, limpeza por idade |
+| 10 | `10_preco_mercadoria_d_sy.md` | D-SY2, D-SY5, D-SY6 (2026-10-17) | Remove o `updateList` morto com a inversão comissão × margem; indEscala real (`INDESCALA`, não mais 'N' fixo); aplicação decodificada do Base64. Depois de compilar: Primeira carga → Produtos |
 
 ### Onda 0 — bootstrap automático de TB_LISTA_SINCRONIA (NOVO)
 

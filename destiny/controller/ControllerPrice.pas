@@ -29,7 +29,6 @@ Type
     function getAll:Boolean;
     function getAllByProduct:Boolean;
     Function delete:boolean;
-    Function updateList(price_list: TClientDataSet):Boolean;
     function getByKey:Boolean;
     procedure getlist;
     procedure assign(ObjOri : TPrice);
@@ -122,29 +121,12 @@ begin
   end;
 end;
 
-function TControllerPrice.updateList(price_list: TClientDataSet): Boolean;
-begin
-  Result := True;
-  with price_list do
-  Begin
-    First;
-    while not eof do
-    Begin
-      if (FieldByName('reg_status').AsString = 'Modified') then
-      Begin
-        Registro.Estabelecimento  := FieldByName('tb_institution_id').AsInteger;
-        Registro.Tabela           := FieldByName('tb_price_list_id').AsInteger;
-        Registro.Produto          := FieldByName('tb_product_id').AsInteger;
-        Registro.Preco            := FieldByName('price_tag').AsFloat;
-        Registro.MargemLucro      := FieldByName('aliq_kickback').AsFloat;
-        Registro.Comissao         := FieldByName('aliq_profit').AsFloat;
-        Registro.Quantidade       := FieldByName('quantity').AsFloat;
-        updateObj(Registro);
-      End;
-      next;
-    End;
-  End;
-end;
+// D-SY2 (Valdo, 2026-10-17): updateList REMOVIDO - nao tinha chamador e
+// copiava a inversao do envio de 2013 (margem <- aliq_kickback, comissao <-
+// aliq_profit). Contrato vigente: aliq_kickback = COMISSAO (PRC_AQ_COM),
+// aliq_profit = MARGEM (PRC_MAR_LRC). A direcao web -> Firebird (D16) nasce
+// na fase propria - nao ressuscitar este metodo
+// (Infra-IA/setes-sync/verificacao-comissao-margem-mercadoria.md).
 
 function TControllerPrice.getAll: Boolean;
 Var
