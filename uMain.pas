@@ -67,6 +67,7 @@ type
     pnl_top_Left: TPanel;
     Sb_Enviar: TSpeedButton;
     Sb_Receber: TSpeedButton;
+    MnuAtivarSincronia: TMenuItem;
     procedure FormCreate(Sender: TObject);
     procedure MnuRestaurarClick(Sender: TObject);
     procedure MnuFecharClick(Sender: TObject);
@@ -80,6 +81,7 @@ type
     procedure Tm_Sync_IntervalTimer(Sender: TObject);
     procedure FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
     procedure FormCloseQuery(Sender: TObject; var CanClose: Boolean);
+    procedure MnuAtivarSincroniaClick(Sender: TObject);
   private
     { Private declarations }
     It_TrayIconData: TNotifyIconData;
@@ -105,6 +107,8 @@ type
 
     procedure DefineTimerAtivo;
     procedure DesativaTimer;
+    // D-SY13: chave recusada pelo servidor - timers parados, tela avisa
+    procedure AplicaSincroniaInativa;
     procedure tryExecIBSQL;
 
     function existTabela(Tabela : String):Boolean;
@@ -163,7 +167,7 @@ implementation
 
 {TFuncoes}
 
-uses  un_funcoes,  tblDevices, stock_list_send_web;
+uses  un_funcoes,  tblDevices, stock_list_send_web, un_sync_key_state;
 
 
 
@@ -274,6 +278,13 @@ procedure TPrincipal.DefineTimerAtivo;
 Var
   LcInterval : String;
 begin
+  // D-SY13: sincronia inativa (chave recusada) - o timer nao volta a
+  // disparar ate o usuario usar Tarefas > Ativar sincronia
+  if SincroniaInativa then
+  Begin
+    AplicaSincroniaInativa;
+    Exit;
+  End;
   if Interval > 0 then
   Begin
     Tm_Sync_At_Minut.Enabled := False;
@@ -296,6 +307,62 @@ begin
   Tm_Sync_At_Minut.Enabled := False;
   Tm_Sync_Interval.Enabled := False;
   TmHide.Enabled := False;
+end;
+
+procedure TPrincipal.AplicaSincroniaInativa;
+Var
+  LcDescricao : String;
+begin
+  // D-SY13 (Valdo, 2026-10-18): a chave foi recusada pelo setes-sync - a
+  // sincronia fica INATIVA (estado gravado no CONFIG.INI, un_sync_key_state):
+  // timers parados e toda tentativa manual inerte ate "Ativar sincronia".
+  Tm_Sync_At_Minut.Enabled := False;
+  Tm_Sync_Interval.Enabled := False;
+  Lb_Processamento.Caption := 'Sincronia INATIVA - chave recusada pelo servidor. Use Tarefas > Ativar sincronia.';
+  Lb_Processamento.Update;
+  LcDescricao := SincroniaInativaDescricao;
+  if Lst_Process_Send.Items.IndexOf(LcDescricao) < 0 then
+    Lst_Process_Send.Items.Add(LcDescricao);
+end;
+
+procedure TPrincipal.MnuAtivarSincroniaClick(Sender: TObject);
+Var
+  LcDetalhe : String;
+begin
+  // D-SY13: so o usuario reativa. Consulta a chave no setes-sync
+  // (GET /sync-key/status): ativa = limpa o estado e retoma os timers;
+  // inativa/inexistente ou sem resposta = nada muda.
+  if FSincronizando then
+  Begin
+    ShowMessage('Aguarde o ciclo de sincronia em andamento terminar.');
+    Exit;
+  End;
+  if not SincroniaInativa then
+  Begin
+    ShowMessage('A sincronia ja esta ativa.');
+    Exit;
+  End;
+  Screen.Cursor := crHourGlass;
+  try
+    case ConsultarChaveSincronia(Fc_Aq_Geral('L', 'SISWEB', 'FPathURL', '0'),
+                                 Fc_Aq_Geral('L', 'SISWEB', 'FApiKey', ''), LcDetalhe) of
+      skcAtiva:
+        Begin
+          LimparSincroniaInativa;
+          DefineTimerAtivo;
+          Lst_Process_Send.Items.Add('Sincronia reativada - a chave esta ativa no servidor.');
+          ShowMessage('Chave ativa: sincronia reativada. Os registros pendentes seguem no proximo ciclo (ou use Iniciar - F5).');
+        End;
+      skcInativa:
+        ShowMessage('A chave continua recusada pelo servidor (' + LcDetalhe + '). A sincronia segue INATIVA.' + sLineBreak +
+                    'Confira a chave (FApiKey) e a URL (FPathURL) em Configuracoes: um 401 sem codigo SYNC_KEY_* ' +
+                    'pode vir de outro servico no caminho, nao do setes-sync.');
+    else
+      ShowMessage('Nao foi possivel consultar a chave (' + LcDetalhe + '). A sincronia segue INATIVA.');
+    end;
+  finally
+    Screen.Cursor := crDefault;
+  end;
 end;
 
 function TPrincipal.AjustaFaturamento: boolean;
@@ -838,6 +905,10 @@ begin
     chbx_setTimeTo.Checked := False;
     Lb_Processamento.Caption := 'Processo de Sincronia - Aguarde parando a execução.....';
     Lb_Processamento.Update;
+    // D-SY13: o ciclo terminou porque a chave foi recusada - o AtivaInterface
+    // acima religou os timers; a sincronia inativa os desliga de novo
+    if SincroniaInativa then
+      AplicaSincroniaInativa;
   except
     on E: Exception do
       GeralogCrashlytics('Roteador.FinalizarSincronia',E.Message);
@@ -865,6 +936,12 @@ procedure TPrincipal.Tm_Sync_At_MinutTimer(Sender: TObject);
 Var
   LcMinuto : String;
 begin
+  // D-SY13: sincronia inativa - o timer nao dispara a sincronia
+  if SincroniaInativa then
+  Begin
+    AplicaSincroniaInativa;
+    Exit;
+  End;
   if VerificarInternet then
   Begin;
     LcMinuto := Copy(TimeToStr(Now),4,2);
@@ -885,6 +962,12 @@ end;
 
 procedure TPrincipal.Tm_Sync_IntervalTimer(Sender: TObject);
 begin
+  // D-SY13: sincronia inativa - o timer nao dispara a sincronia
+  if SincroniaInativa then
+  Begin
+    AplicaSincroniaInativa;
+    Exit;
+  End;
   if VerificarInternet then
   Begin;
     GeralogFile('TPrincipal.Tm_Sync_Interval','Evento acionado pelo Timer Intervalo');
@@ -982,6 +1065,13 @@ end;
 
 procedure TPrincipal.Sb_SincronizarClick(Sender: TObject);
 begin
+  // D-SY13: com a sincronia inativa a tentativa manual fica INERTE (nem
+  // reposiciona o checkpoint) - so Tarefas > Ativar sincronia reativa
+  if SincroniaInativa then
+  Begin
+    AplicaSincroniaInativa;
+    Exit;
+  End;
   if VerificarInternet then
   Begin
     InicializarSincronia;
@@ -1002,6 +1092,14 @@ begin
     Lst_Process_Send.Items.Add('Verifique a conexao local e reinicie o Sincronizador.');
     Lb_Processamento.Caption := 'Processo de Sincronia - BLOQUEADO (banco nao preparado)';
     AtivaInterface(True);
+    Exit;
+  End;
+  // D-SY13: cinto - toda porta de entrada ja confere; nenhuma sincronia roda
+  // com a chave recusada
+  if SincroniaInativa then
+  Begin
+    AtivaInterface(True);
+    AplicaSincroniaInativa;
     Exit;
   End;
   ExecutaLimpezaDiaria;

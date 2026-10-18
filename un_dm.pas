@@ -697,8 +697,14 @@ type
     Descricao : String;
     Ativo     : String;
     Deleted   : String;
-    CatId     : Integer;  // preenchidos durante a conversao
-    CatPath   : String;
+    // D-SY11: natureza dos produtos - preenchidos ANTES da conversao
+    PrecisaP  : Boolean;  // nasce a categoria 'P' (mercadoria)
+    PrecisaS  : Boolean;  // nasce a categoria 'S' (servico)
+    // preenchidos durante a conversao (0/'' = a natureza nao existe aqui)
+    CatIdP    : Integer;
+    CatPathP  : String;
+    CatIdS    : Integer;
+    CatPathS  : String;
   end;
   TConvCategoriaRows = array of TConvCategoriaRow;
 
@@ -706,8 +712,18 @@ type
   TCatExistenteRow = record
     Descricao : String;
     Nivel     : String;
+    Kind      : String;   // D-SY11: 'P' mercadoria / 'S' servico
   end;
   TCatExistenteRows = array of TCatExistenteRow;
+
+  // D-SY11: quantos produtos de cada natureza ha num subgrupo (ou direto
+  // no grupo, sem subgrupo)
+  TConvNaturezaRow = record
+    Codigo : Integer;
+    QtdP   : Integer;   // PRO_TIPO <> 'S' (P/M - e o 'A' aposentado/vazio, como hoje)
+    QtdS   : Integer;   // PRO_TIPO = 'S'
+  end;
+  TConvNaturezaRows = array of TConvNaturezaRow;
 
 { Conversao TB_GRUPOS/TB_SUBGRUPOS -> TB_CATEGORY (Valdo, 2026-08-01):
   hierarquia de DOIS niveis - grupo vira categoria RAIZ (POSIT_LEVEL '001')
@@ -719,27 +735,42 @@ type
   produto SO com grupo, a categoria raiz; o filtro <> nos UPDATEs so pula
   linha ja correta (idempotencia - UPDATE sem mudanca ainda dispararia a
   TG_SRC_PRODUTO e reencheria a fila a cada start).
-  Idempotente por DESCRICAO (raiz = POSIT_LEVEL sem ponto; filha = debaixo
-  do caminho do pai - mesma mecanica do getAutoCreateBy* do
-  ControllerDskCategory): roda a cada start e converte tambem grupos que o
-  desktop legado criar depois. LIMPEZA PREVIA (Passo 0, Valdo 2026-08-04):
-  linha que a conversao nao produziria = tabela suja -> zera TB_CATEGORY +
-  PRO_CODCAT + generator e reconverte do zero; tabela conforme passa ilesa. Roda DEPOIS de EnsureTriggers de proposito:
-  INSERT/UPDATE caem na TB_SINCRONIA e a web recebe categorias e produtos
-  no ciclo normal (raizes inserem antes das filhas; catalogo Seq 3
-  [category] < Seq 6 [produto]). }
+  CATEGORIA POR NATUREZA (D-SY11, Valdo 2026-10-18): mercadoria = KIND 'P',
+  servico = KIND 'S', e a recategorizacao acontece SO AQUI, na origem (nunca
+  na web). O legado nao marca grupo de servico - o unico sinal e o PRO_TIPO
+  dos produtos. Para cada grupo/subgrupo nasce a categoria 'P' se houver
+  produto que nao e servico (grupo/subgrupo SEM produto fica 'P', como antes)
+  e a categoria 'S' (mesmo nome, arvore 'S' propria - raiz 'S' e filhas 'S')
+  se houver produto PRO_TIPO = 'S'. Cada produto e reapontado para a
+  categoria da SUA natureza.
+  Idempotente por DESCRICAO + KIND (raiz = POSIT_LEVEL sem ponto; filha =
+  debaixo do caminho do pai - mesma mecanica do getAutoCreateBy* do
+  ControllerDskCategory): roda no "Preparar o banco" e converte tambem grupos
+  que o desktop legado criar depois. LIMPEZA PREVIA (Passo 0, Valdo
+  2026-08-04): linha que a conversao nao produziria = tabela suja -> zera
+  TB_CATEGORY + PRO_CODCAT + generator e reconverte do zero; tabela conforme
+  passa ilesa. Com a D-SY11 a natureza entra na conferencia: categoria 'P'
+  de grupo que so tem servico (o que a conversao antiga gerava) e SUJEIRA.
+  Roda DEPOIS de EnsureTriggers de proposito: INSERT/UPDATE caem na
+  TB_SINCRONIA (raizes inserem antes das filhas; catalogo Seq 3 [category] <
+  Seq 6 [produto]). }
 procedure TDM.MigraGruposParaCategoria;
 Var
   LcGrupos  : TConvCategoriaRows;
   LcSubs    : TConvCategoriaRows;
   LcCats    : TCatExistenteRows;
-  I, J, K   : Integer;
+  LcNatSub  : TConvNaturezaRows;
+  LcNatGrp  : TConvNaturezaRows;
+  I, J, K, L: Integer;
   LcPaiIdx  : Integer;
   LcCatId   : Integer;
+  LcQtdP    : Integer;
+  LcQtdS    : Integer;
   LcPath    : String;
   LcSujeira : Boolean;
   LcAchou   : Boolean;
   LcPaiDesc : String;
+  LcPaiKind : String;
 
   function ContaPontos(const pNivel: String): Integer;
   Var
@@ -756,7 +787,51 @@ Var
     Result := Qr_Crud.FieldByName('ID').AsInteger;
   end;
 
-  procedure InsereCategoria(pId: Integer; const pDescricao, pPath, pAtivo, pDeleted: String);
+  function PrecisaKind(const pRow: TConvCategoriaRow; const pKind: String): Boolean;
+  begin
+    if pKind = 'S' then
+      Result := pRow.PrecisaS
+    else if pKind = 'P' then
+      Result := pRow.PrecisaP
+    else
+      Result := False;
+  end;
+
+  // D-SY11: materializa a contagem por natureza (Qr_Crud e reutilizado)
+  procedure LeNatureza(const pSql: String; var pRows: TConvNaturezaRows);
+  begin
+    SetLength(pRows, 0);
+    ExecConsulta(pSql);
+    while not Qr_Crud.Eof do
+    Begin
+      SetLength(pRows, Length(pRows) + 1);
+      with pRows[High(pRows)] do
+      Begin
+        Codigo := Qr_Crud.FieldByName('COD').AsInteger;
+        QtdP   := Qr_Crud.FieldByName('QTD_P').AsInteger;
+        QtdS   := Qr_Crud.FieldByName('QTD_S').AsInteger;
+      End;
+      Qr_Crud.Next;
+    End;
+  end;
+
+  procedure AchaNatureza(const pRows: TConvNaturezaRows; pCodigo: Integer;
+    out pQtdP, pQtdS: Integer);
+  Var
+    N: Integer;
+  begin
+    pQtdP := 0;
+    pQtdS := 0;
+    for N := 0 to High(pRows) do
+      if pRows[N].Codigo = pCodigo then
+      Begin
+        pQtdP := pRows[N].QtdP;
+        pQtdS := pRows[N].QtdS;
+        Break;
+      End;
+  end;
+
+  procedure InsereCategoria(pId: Integer; const pDescricao, pPath, pKind, pAtivo, pDeleted: String);
   begin
     with Qr_Acao do
     Begin
@@ -767,14 +842,15 @@ Var
         SQL.Text :=
           'INSERT INTO TB_CATEGORY ' +
           '(ID, TB_INSTITUTE_ID, DESCRIPTION, POSIT_LEVEL, KIND, ENABLED, DELETED) ' +
-          'VALUES (:ID, 1, :DESCRIPTION, :POSIT_LEVEL, ''P'', :ENABLED, :DELETED)';
+          'VALUES (:ID, 1, :DESCRIPTION, :POSIT_LEVEL, :KIND, :ENABLED, :DELETED)';
         // TB_INSTITUTE_ID = 1: valor LOCAL (mesmo das rotinas existentes -
         // tas_config/Fc_GrupoToCategoria); nao viaja no /category/sincronize
-        // (D12 - o servidor deriva a institution da API key). KIND 'P' =
-        // arvore de produtos.
+        // (D12 - o servidor deriva a institution da API key). KIND = arvore
+        // da natureza (D-SY11): 'P' mercadoria, 'S' servico.
         ParamByName('ID').AsInteger         := pId;
         ParamByName('DESCRIPTION').AsString := pDescricao;
         ParamByName('POSIT_LEVEL').AsString := pPath;
+        ParamByName('KIND').AsString        := pKind;
         if Trim(pAtivo) = 'N' then
           ParamByName('ENABLED').AsString := 'N'
         else
@@ -792,6 +868,43 @@ Var
           raise;
         End;
       end;
+    End;
+  end;
+
+  // Reencontra (DESCRICAO + KIND, raiz ou debaixo do pai) ou cria a categoria.
+  // pPaiPath = '' -> raiz.
+  function AchaOuCriaCategoria(const pDescricao, pPaiPath, pKind, pAtivo, pDeleted: String;
+    out pPath: String): Integer;
+  begin
+    if pPaiPath = '' then
+      ExecConsulta(
+        'SELECT ID, POSIT_LEVEL FROM TB_CATEGORY ' +
+        'WHERE UPPER(DESCRIPTION) = ' + QuotedStr(UpperCase(pDescricao)) + ' ' +
+        'AND POSIT_LEVEL NOT LIKE ''%.%'' ' +
+        'AND KIND = ' + QuotedStr(pKind) + ' ' +
+        'ORDER BY ID'
+      )
+    else
+      ExecConsulta(
+        'SELECT ID, POSIT_LEVEL FROM TB_CATEGORY ' +
+        'WHERE UPPER(DESCRIPTION) = ' + QuotedStr(UpperCase(pDescricao)) + ' ' +
+        'AND POSIT_LEVEL LIKE ' + QuotedStr(pPaiPath + '.%') + ' ' +
+        'AND KIND = ' + QuotedStr(pKind) + ' ' +
+        'ORDER BY ID'
+      );
+    if not Qr_Crud.Eof then
+    Begin
+      Result := Qr_Crud.FieldByName('ID').AsInteger;
+      pPath  := Trim(Qr_Crud.FieldByName('POSIT_LEVEL').AsString);
+    End
+    else
+    Begin
+      Result := ProximoId;
+      if pPaiPath = '' then
+        pPath := StrZero(Result, 3, 0)
+      else
+        pPath := pPaiPath + '.' + StrZero(Result, 3, 0);
+      InsereCategoria(Result, pDescricao, pPath, pKind, pAtivo, pDeleted);
     End;
   end;
 
@@ -822,8 +935,12 @@ begin
       Descricao := Trim(Qr_Crud.FieldByName('GRP_DESCRICAO').AsString);
       Ativo     := Trim(Qr_Crud.FieldByName('GRP_ATIVO').AsString);
       Deleted   := Trim(Qr_Crud.FieldByName('DELETED').AsString);
-      CatId     := 0;
-      CatPath   := '';
+      PrecisaP  := False;
+      PrecisaS  := False;
+      CatIdP    := 0;
+      CatPathP  := '';
+      CatIdS    := 0;
+      CatPathS  := '';
     End;
     Qr_Crud.Next;
   End;
@@ -849,11 +966,57 @@ begin
         Descricao := Trim(Qr_Crud.FieldByName('SBG_DESCRICAO').AsString);
         Ativo     := Trim(Qr_Crud.FieldByName('SBG_ATIVO').AsString);
         Deleted   := Trim(Qr_Crud.FieldByName('DELETED').AsString);
-        CatId     := 0;
-        CatPath   := '';
+        PrecisaP  := False;
+        PrecisaS  := False;
+        CatIdP    := 0;
+        CatPathP  := '';
+        CatIdS    := 0;
+        CatPathS  := '';
       End;
       Qr_Crud.Next;
     End;
+  End;
+
+  { D-SY11 - natureza de cada grupo/subgrupo pelos produtos dele (todos, inclusive
+    os excluidos: o produto excluido tambem viaja e tambem aponta categoria).
+    PRO_TIPO 'S' = servico; qualquer outro (P/M, e o 'A' aposentado ou vazio,
+    que hoje ja caem na categoria de mercadoria) = 'P'. }
+  LeNatureza(
+    'SELECT PRO_CODSBG AS COD, ' +
+    'SUM(CASE WHEN PRO_TIPO = ''S'' THEN 0 ELSE 1 END) AS QTD_P, ' +
+    'SUM(CASE WHEN PRO_TIPO = ''S'' THEN 1 ELSE 0 END) AS QTD_S ' +
+    'FROM TB_PRODUTO WHERE COALESCE(PRO_CODSBG, 0) <> 0 ' +
+    'GROUP BY PRO_CODSBG', LcNatSub);
+  LeNatureza(
+    'SELECT PRO_CODGRP AS COD, ' +
+    'SUM(CASE WHEN PRO_TIPO = ''S'' THEN 0 ELSE 1 END) AS QTD_P, ' +
+    'SUM(CASE WHEN PRO_TIPO = ''S'' THEN 1 ELSE 0 END) AS QTD_S ' +
+    'FROM TB_PRODUTO WHERE COALESCE(PRO_CODSBG, 0) = 0 AND COALESCE(PRO_CODGRP, 0) <> 0 ' +
+    'GROUP BY PRO_CODGRP', LcNatGrp);
+
+  // Subgrupo: 'S' se tem servico; 'P' se tem mercadoria OU nao tem produto
+  for J := 0 to High(LcSubs) do
+  Begin
+    AchaNatureza(LcNatSub, LcSubs[J].Codigo, LcQtdP, LcQtdS);
+    LcSubs[J].PrecisaS := LcQtdS > 0;
+    LcSubs[J].PrecisaP := (LcQtdP > 0) or (LcQtdS = 0);
+  End;
+  // Grupo: a natureza dos produtos diretos (sem subgrupo) + a de cada filha
+  // (a filha so existe debaixo da raiz da MESMA natureza); grupo sem produto
+  // nenhum fica 'P', como antes
+  for I := 0 to High(LcGrupos) do
+  Begin
+    AchaNatureza(LcNatGrp, LcGrupos[I].Codigo, LcQtdP, LcQtdS);
+    LcGrupos[I].PrecisaP := LcQtdP > 0;
+    LcGrupos[I].PrecisaS := LcQtdS > 0;
+    for J := 0 to High(LcSubs) do
+      if LcSubs[J].GrupoCod = LcGrupos[I].Codigo then
+      Begin
+        if LcSubs[J].PrecisaP then LcGrupos[I].PrecisaP := True;
+        if LcSubs[J].PrecisaS then LcGrupos[I].PrecisaS := True;
+      End;
+    if (not LcGrupos[I].PrecisaP) and (not LcGrupos[I].PrecisaS) then
+      LcGrupos[I].PrecisaP := True;
   End;
 
   { Passo 0 - limpeza previa (Valdo, 2026-08-04): a conversao so confia em
@@ -861,12 +1024,16 @@ begin
     geraria - raiz que nao e grupo, filha que nao e subgrupo do seu grupo,
     3+ niveis, duplicata, POSIT_LEVEL vazio (restos da rotina antiga do
     tas_config, testes ou grupo renomeado no legado) - zera a tabela, o
-    PRO_CODCAT e o generator e reconverte do zero. Tabela ja conforme passa
-    ILESA: limpar a cada start trocaria os ids e reencheria a fila (mesmo
-    principio do <> dos UPDATEs). O DELETE nao dispara trigger (TG_SRC_*
-    nao captura DELETE) - quem viaja para a web e a reconversao. }
+    PRO_CODCAT e o generator e reconverte do zero. D-SY11: a NATUREZA conta -
+    KIND fora de P/S, categoria de uma natureza que o grupo/subgrupo nao tem
+    (ex.: 'P' de grupo so de servico, como a conversao antiga gerava), filha
+    de natureza diferente da do pai, ou duplicata da mesma descricao E
+    natureza tambem sao sujeira. Tabela ja conforme passa ILESA: limpar a
+    cada start trocaria os ids e reencheria a fila (mesmo principio do <>
+    dos UPDATEs). O DELETE nao dispara trigger (TG_SRC_* nao captura
+    DELETE) - quem viaja para a web e a reconversao. }
   SetLength(LcCats, 0);
-  ExecConsulta('SELECT DESCRIPTION, POSIT_LEVEL FROM TB_CATEGORY');
+  ExecConsulta('SELECT DESCRIPTION, POSIT_LEVEL, KIND FROM TB_CATEGORY');
   while not Qr_Crud.Eof do
   Begin
     SetLength(LcCats, Length(LcCats) + 1);
@@ -874,6 +1041,7 @@ begin
     Begin
       Descricao := Trim(Qr_Crud.FieldByName('DESCRIPTION').AsString);
       Nivel     := Trim(Qr_Crud.FieldByName('POSIT_LEVEL').AsString);
+      Kind      := Trim(Qr_Crud.FieldByName('KIND').AsString);
     End;
     Qr_Crud.Next;
   End;
@@ -882,14 +1050,17 @@ begin
   for I := 0 to High(LcCats) do
   Begin
     if (LcCats[I].Descricao = '') or (LcCats[I].Nivel = '') or
-       (ContaPontos(LcCats[I].Nivel) > 1) then
+       (ContaPontos(LcCats[I].Nivel) > 1) or
+       ((LcCats[I].Kind <> 'P') and (LcCats[I].Kind <> 'S')) then
       LcSujeira := True
     else if ContaPontos(LcCats[I].Nivel) = 0 then
     Begin
-      // Raiz: precisa corresponder a um grupo e nao ter duplicata
+      // Raiz: um grupo com esta descricao que tenha esta natureza; sem
+      // duplicata da mesma descricao E natureza
       LcAchou := False;
       for J := 0 to High(LcGrupos) do
-        if UpperCase(LcGrupos[J].Descricao) = UpperCase(LcCats[I].Descricao) then
+        if (UpperCase(LcGrupos[J].Descricao) = UpperCase(LcCats[I].Descricao)) and
+           PrecisaKind(LcGrupos[J], LcCats[I].Kind) then
         Begin
           LcAchou := True;
           Break;
@@ -897,38 +1068,42 @@ begin
       if not LcAchou then LcSujeira := True;
       for K := 0 to I - 1 do
         if (ContaPontos(LcCats[K].Nivel) = 0) and
+           (LcCats[K].Kind = LcCats[I].Kind) and
            (UpperCase(LcCats[K].Descricao) = UpperCase(LcCats[I].Descricao)) then
           LcSujeira := True;
     End
     else
     Begin
-      // Filha: o pai (path antes do ponto) tem que ser uma raiz existente
-      // cujo grupo tenha subgrupo com esta descricao; sem duplicata sob o pai
+      // Filha: o pai (path antes do ponto) tem que ser uma raiz existente da
+      // MESMA natureza, e algum grupo com a descricao do pai tem que ter
+      // subgrupo com esta descricao que tenha esta natureza (todos os grupos
+      // de mesma descricao: a conversao junta os dois na mesma raiz); sem
+      // duplicata sob o pai
       LcPath    := Copy(LcCats[I].Nivel, 1, Pos('.', LcCats[I].Nivel) - 1);
       LcPaiDesc := '';
+      LcPaiKind := '';
       for K := 0 to High(LcCats) do
         if LcCats[K].Nivel = LcPath then
         Begin
           LcPaiDesc := LcCats[K].Descricao;
-          Break;
-        End;
-      LcPaiIdx := -1;
-      for J := 0 to High(LcGrupos) do
-        if (LcPaiDesc <> '') and
-           (UpperCase(LcGrupos[J].Descricao) = UpperCase(LcPaiDesc)) then
-        Begin
-          LcPaiIdx := J;
+          LcPaiKind := LcCats[K].Kind;
           Break;
         End;
       LcAchou := False;
-      if LcPaiIdx >= 0 then
-        for J := 0 to High(LcSubs) do
-          if (LcSubs[J].GrupoCod = LcGrupos[LcPaiIdx].Codigo) and
-             (UpperCase(LcSubs[J].Descricao) = UpperCase(LcCats[I].Descricao)) then
-          Begin
-            LcAchou := True;
-            Break;
-          End;
+      if (LcPaiDesc <> '') and (LcPaiKind = LcCats[I].Kind) then
+        for J := 0 to High(LcGrupos) do
+        Begin
+          if UpperCase(LcGrupos[J].Descricao) <> UpperCase(LcPaiDesc) then Continue;
+          for L := 0 to High(LcSubs) do
+            if (LcSubs[L].GrupoCod = LcGrupos[J].Codigo) and
+               (UpperCase(LcSubs[L].Descricao) = UpperCase(LcCats[I].Descricao)) and
+               PrecisaKind(LcSubs[L], LcCats[I].Kind) then
+            Begin
+              LcAchou := True;
+              Break;
+            End;
+          if LcAchou then Break;
+        End;
       if not LcAchou then LcSujeira := True;
       for K := 0 to I - 1 do
         if (ContaPontos(LcCats[K].Nivel) = 1) and
@@ -949,32 +1124,19 @@ begin
     ExecComando('SET GENERATOR GN_CATEGORY TO 0');
   End;
 
-  // Passo 1 - grupo vira (ou reencontra) categoria RAIZ
+  // Passo 1 - grupo vira (ou reencontra) a categoria RAIZ de cada natureza
   for I := 0 to High(LcGrupos) do
   Begin
-    ExecConsulta(
-      'SELECT ID, POSIT_LEVEL FROM TB_CATEGORY ' +
-      'WHERE UPPER(DESCRIPTION) = ' + QuotedStr(UpperCase(LcGrupos[I].Descricao)) + ' ' +
-      'AND POSIT_LEVEL NOT LIKE ''%.%'' ' +
-      'ORDER BY ID'
-    );
-    if not Qr_Crud.Eof then
-    Begin
-      LcGrupos[I].CatId   := Qr_Crud.FieldByName('ID').AsInteger;
-      LcGrupos[I].CatPath := Trim(Qr_Crud.FieldByName('POSIT_LEVEL').AsString);
-    End
-    else
-    Begin
-      LcCatId := ProximoId;
-      LcPath  := StrZero(LcCatId, 3, 0);
-      InsereCategoria(LcCatId, LcGrupos[I].Descricao, LcPath,
-                      LcGrupos[I].Ativo, LcGrupos[I].Deleted);
-      LcGrupos[I].CatId   := LcCatId;
-      LcGrupos[I].CatPath := LcPath;
-    End;
+    if LcGrupos[I].PrecisaP then
+      LcGrupos[I].CatIdP := AchaOuCriaCategoria(LcGrupos[I].Descricao, '', 'P',
+        LcGrupos[I].Ativo, LcGrupos[I].Deleted, LcGrupos[I].CatPathP);
+    if LcGrupos[I].PrecisaS then
+      LcGrupos[I].CatIdS := AchaOuCriaCategoria(LcGrupos[I].Descricao, '', 'S',
+        LcGrupos[I].Ativo, LcGrupos[I].Deleted, LcGrupos[I].CatPathS);
   End;
 
-  // Passo 2 - subgrupo vira filha do seu grupo + preenche PRO_CODCAT
+  // Passo 2 - subgrupo vira filha do seu grupo NA ARVORE DA MESMA NATUREZA +
+  // preenche PRO_CODCAT de cada produto pela natureza dele
   for J := 0 to High(LcSubs) do
   Begin
     LcPaiIdx := -1;
@@ -986,40 +1148,56 @@ begin
       End;
     if LcPaiIdx < 0 then Continue; // grupo pai sem descricao valida
 
-    ExecConsulta(
-      'SELECT ID FROM TB_CATEGORY ' +
-      'WHERE UPPER(DESCRIPTION) = ' + QuotedStr(UpperCase(LcSubs[J].Descricao)) + ' ' +
-      'AND POSIT_LEVEL LIKE ' + QuotedStr(LcGrupos[LcPaiIdx].CatPath + '.%') + ' ' +
-      'ORDER BY ID'
-    );
-    if not Qr_Crud.Eof then
-      LcCatId := Qr_Crud.FieldByName('ID').AsInteger
-    else
-    Begin
-      LcCatId := ProximoId;
-      LcPath  := LcGrupos[LcPaiIdx].CatPath + '.' + StrZero(LcCatId, 3, 0);
-      InsereCategoria(LcCatId, LcSubs[J].Descricao, LcPath,
-                      LcSubs[J].Ativo, LcSubs[J].Deleted);
-    End;
-    LcSubs[J].CatId := LcCatId;
-
     // PRO_CODCAT = categoria de NIVEL 2 (substituicao livre - campo nao
     // estava em uso); o <> evita UPDATE de linha ja certa (trigger)
-    ExecComando(
-      'UPDATE TB_PRODUTO SET PRO_CODCAT = ' + IntToStr(LcCatId) + ' ' +
-      'WHERE PRO_CODSBG = ' + IntToStr(LcSubs[J].Codigo) + ' ' +
-      'AND COALESCE(PRO_CODCAT, 0) <> ' + IntToStr(LcCatId)
-    );
+    if LcSubs[J].PrecisaP and (LcGrupos[LcPaiIdx].CatPathP <> '') then
+    Begin
+      LcCatId := AchaOuCriaCategoria(LcSubs[J].Descricao, LcGrupos[LcPaiIdx].CatPathP, 'P',
+        LcSubs[J].Ativo, LcSubs[J].Deleted, LcPath);
+      LcSubs[J].CatIdP   := LcCatId;
+      LcSubs[J].CatPathP := LcPath;
+      ExecComando(
+        'UPDATE TB_PRODUTO SET PRO_CODCAT = ' + IntToStr(LcCatId) + ' ' +
+        'WHERE PRO_CODSBG = ' + IntToStr(LcSubs[J].Codigo) + ' ' +
+        'AND COALESCE(PRO_TIPO, '''') <> ''S'' ' +
+        'AND COALESCE(PRO_CODCAT, 0) <> ' + IntToStr(LcCatId)
+      );
+    End;
+    if LcSubs[J].PrecisaS and (LcGrupos[LcPaiIdx].CatPathS <> '') then
+    Begin
+      LcCatId := AchaOuCriaCategoria(LcSubs[J].Descricao, LcGrupos[LcPaiIdx].CatPathS, 'S',
+        LcSubs[J].Ativo, LcSubs[J].Deleted, LcPath);
+      LcSubs[J].CatIdS   := LcCatId;
+      LcSubs[J].CatPathS := LcPath;
+      ExecComando(
+        'UPDATE TB_PRODUTO SET PRO_CODCAT = ' + IntToStr(LcCatId) + ' ' +
+        'WHERE PRO_CODSBG = ' + IntToStr(LcSubs[J].Codigo) + ' ' +
+        'AND PRO_TIPO = ''S'' ' +
+        'AND COALESCE(PRO_CODCAT, 0) <> ' + IntToStr(LcCatId)
+      );
+    End;
   End;
 
-  // Passo 3 - produto SO com grupo (sem subgrupo) cai na categoria raiz
+  // Passo 3 - produto SO com grupo (sem subgrupo) cai na raiz da sua natureza
   for I := 0 to High(LcGrupos) do
-    ExecComando(
-      'UPDATE TB_PRODUTO SET PRO_CODCAT = ' + IntToStr(LcGrupos[I].CatId) + ' ' +
-      'WHERE PRO_CODGRP = ' + IntToStr(LcGrupos[I].Codigo) + ' ' +
-      'AND COALESCE(PRO_CODSBG, 0) = 0 ' +
-      'AND COALESCE(PRO_CODCAT, 0) <> ' + IntToStr(LcGrupos[I].CatId)
-    );
+  Begin
+    if LcGrupos[I].CatIdP > 0 then
+      ExecComando(
+        'UPDATE TB_PRODUTO SET PRO_CODCAT = ' + IntToStr(LcGrupos[I].CatIdP) + ' ' +
+        'WHERE PRO_CODGRP = ' + IntToStr(LcGrupos[I].Codigo) + ' ' +
+        'AND COALESCE(PRO_CODSBG, 0) = 0 ' +
+        'AND COALESCE(PRO_TIPO, '''') <> ''S'' ' +
+        'AND COALESCE(PRO_CODCAT, 0) <> ' + IntToStr(LcGrupos[I].CatIdP)
+      );
+    if LcGrupos[I].CatIdS > 0 then
+      ExecComando(
+        'UPDATE TB_PRODUTO SET PRO_CODCAT = ' + IntToStr(LcGrupos[I].CatIdS) + ' ' +
+        'WHERE PRO_CODGRP = ' + IntToStr(LcGrupos[I].Codigo) + ' ' +
+        'AND COALESCE(PRO_CODSBG, 0) = 0 ' +
+        'AND PRO_TIPO = ''S'' ' +
+        'AND COALESCE(PRO_CODCAT, 0) <> ' + IntToStr(LcGrupos[I].CatIdS)
+      );
+  End;
 end;
 
 procedure TDM.LimpaFilaSincroniaDoBootstrap;

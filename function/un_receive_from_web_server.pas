@@ -4,11 +4,13 @@ interface
 
 uses
   Classes,System.SysUtils,System.StrUtils,Vcl.Forms,Vcl.CheckLst,
-  IdHTTP,un_base_setes, general_web;
+  IdHTTP,un_base_setes, general_web, un_sync_key_state;
 
 type
     TreceiveFromWebServer = Class(TBaseSetes)
   private
+    // D-SY13: o setes-sync recusou a CHAVE neste ciclo - para tudo
+    FChaveRecusada: Boolean;
     procedure PreparaListBox;
 
     procedure SyncTable(indice: Integer);
@@ -49,6 +51,9 @@ begin
     SetProgressBar(FSincronia.Lista.count);
     LcReceiveWeb.InstitutionDestino := FInstitutionDestino;
     LcReceiveWeb.URL := FURL;
+    // D-SY13: sem a chave o setes-sync responde 401 e a sincronia INTEIRA
+    // ficaria inativa (antes so marcava o SRC_LOG) - mesma chave do envio
+    LcReceiveWeb.ApiKey := FApiKey;
     LcReceiveWeb.Metodo := 'Get';
     LcReceiveWeb.EndPoint := FListaSincronia.registro.endPoint;
     LcReceiveWeb.Inicializa;
@@ -61,17 +66,29 @@ begin
         Try
           LcReceiveWeb.Codigo := FSincronia.Lista[I].Registro;
           LcReceiveWeb.receive;
+          // D-SY13: chave recusada - nada de SRC_LOG, sincronia INATIVA
+          if LcReceiveWeb.AuthRefused then
+          Begin
+            FChaveRecusada := True;
+            // nunca levanta (falha ao gravar o CONFIG.INI vai para o log) -
+            // nada cai no Except abaixo, que gravaria SRC_LOG num registro
+            MarcarSincroniaInativa(LcReceiveWeb.Retorno.ID, LcReceiveWeb.ErrorCode,
+              LcReceiveWeb.Retorno.Mensagem);
+          End;
         Finally
-          FSincronia.Clear;
-          FSincronia.Registro.Tabela    := FListaSincronia.Registro.Tabela;
-          FSincronia.Registro.Registro  := FSincronia.Lista[I].Registro;
-          FSincronia.Registro.LogResult := LcReceiveWeb.Retorno.Mensagem;
-          FSincronia.saveReturn;
-          case LcReceiveWeb.Retorno.ID of
-            200:Begin
-                  SetLastUpdate(FListaSincronia.registro.Tabela, FListaSincronia.registro.Tipo, 'R', FSincronia.Lista[I].Tempo);
-                end;
-          end;
+          if not LcReceiveWeb.AuthRefused then
+          Begin
+            FSincronia.Clear;
+            FSincronia.Registro.Tabela    := FListaSincronia.Registro.Tabela;
+            FSincronia.Registro.Registro  := FSincronia.Lista[I].Registro;
+            FSincronia.Registro.LogResult := LcReceiveWeb.Retorno.Mensagem;
+            FSincronia.saveReturn;
+            case LcReceiveWeb.Retorno.ID of
+              200:Begin
+                    SetLastUpdate(FListaSincronia.registro.Tabela, FListaSincronia.registro.Tipo, 'R', FSincronia.Lista[I].Tempo);
+                  end;
+            end;
+          End;
           updateMsgProcess(concat(FListaSincronia.registro.DescricaoProcesso, ' - ',
           intToStr(progresso.MaxValue), ' / ',
           intToStr(progresso.Progress + 1)), indice);
@@ -86,6 +103,8 @@ begin
           SetLastUpdate(FListaSincronia.registro.Tabela, FListaSincronia.registro.Tipo, 'E', FSincronia.Lista[I].Tempo - StrToTime('00:01:00'));
         End;
       end;
+      // D-SY13: chave recusada - nenhum outro registro e tentado
+      if FChaveRecusada then Break;
     End;
   finally
     LcReceiveWeb.Destroy;
@@ -101,6 +120,7 @@ begin
   for I := 0 to FListaSincronia.ListaReceber.count - 1 do
   Begin
     if PararSolicitado then Break; // parada graciosa entre tabelas
+    if FChaveRecusada then Break;  // D-SY13: chave recusada - para o ciclo
     FListaSincronia.ClonarObj(FListaSincronia.ListaReceber[I],FListaSincronia.registro);
     if FListaSincronia.registro.ativo = 'S' then
     Begin
@@ -127,6 +147,9 @@ end;
 
 procedure TreceiveFromWebServer.Execute;
 begin
+  FChaveRecusada := False;
+  // D-SY13: sincronia inativa = nada a receber
+  if SincroniaInativa then Exit;
   if ValidaConexao then
   Begin
     PreparaListBox;

@@ -7,7 +7,7 @@ uses
    IBUpdateSQL, IBSQL,forms,dialogs, windows,Graphics,ExtCtrls,Gauges,
    jpeg, pngimage, ControllerPedido, un_sistema, un_receive_from_web_server,
   un_dm,  un_send_to_web_server, un_base_setes,
-   Vcl.StdCtrls,  UnFunctions;
+   Vcl.StdCtrls,  UnFunctions, un_sync_key_state;
 
 
 type
@@ -61,6 +61,12 @@ Var
   LcUrl : String;
   LcApiKey : String;
 begin
+  // D-SY13 (Valdo, 2026-10-18): o servidor recusou a chave num ciclo anterior
+  // - a sincronia fica INATIVA ate o usuario usar "Ativar sincronia". Sai
+  // ANTES de ligar FReceiveFromWEb/FSendToWEb (o Destroy so libera o que
+  // foi criado).
+  if SincroniaInativa then Exit;
+
   // D12: institution/CNPJ nao sao mais configurados no cliente - o servidor
   // resolve institution/schema pela X-Api-Key.
   FReceiveFromWEb     := ( Fc_Aq_Geral('L','SISWEB', 'ReceiveWebServer','S') = 'S');
@@ -84,8 +90,9 @@ begin
     ReceiveFromWeb.Execute;
   End;
 
-  // Parada graciosa pedida durante o recebimento: nao inicia o envio
-  if TBaseSetes.PararSolicitado then
+  // Parada graciosa pedida durante o recebimento - ou chave recusada nele
+  // (D-SY13): nao inicia o envio
+  if TBaseSetes.PararSolicitado or SincroniaInativa then
   Begin
     FSendToWEb := False;
     Exit;

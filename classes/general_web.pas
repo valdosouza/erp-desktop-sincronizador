@@ -20,6 +20,10 @@ Type
     FApiKey:    String;
     FExternalCode: String;
     FClearExternalCode: Boolean;
+    // D-SY13: codigo do erro do envelope ({ok:false, error, code}) e a
+    // recusa da CHAVE (401 / 403 SYNC_KEY_INACTIVE - un_sync_key_state)
+    FErrorCode: String;
+    FAuthRefused: Boolean;
     FSincronia   : TControllerSincronia;
 
     //RESTResponseDSA: TRESTResponseDataSetAdapter;
@@ -91,6 +95,11 @@ Type
     // D13: true = o registro nao e desta classe (filtro disjunto nao casou);
     // o motor pula saveReturn/checkpoint e o registro fica na fila.
     property Skip        : Boolean     read FSkip;
+    // D-SY13 (Valdo, 2026-10-18): True = o setes-sync RECUSOU A CHAVE (401,
+    // ou 403 SYNC_KEY_INACTIVE). O motor de envio NAO grava SRC_LOG neste
+    // registro, marca a sincronia INATIVA e interrompe o ciclo.
+    property AuthRefused : Boolean     read FAuthRefused;
+    property ErrorCode   : String      read FErrorCode;
     property InstitutionOrigem:Integer  Read FInstitutionOrigem  write setFInstitutionOrigem;
     property InstitutionDestino:Integer Read FInstitutionDestino write setFInstitutionDestino;
 
@@ -105,7 +114,7 @@ implementation
 
 { TGeneralWeb }
 
-uses customer_send_web, UnFunctions;
+uses customer_send_web, UnFunctions, un_sync_key_state;
 
 function TGeneralWeb.DerivePersonType(const pDoc: String): String;
 begin
@@ -202,6 +211,8 @@ Var
 begin
   FExternalCode := '';
   FClearExternalCode := False;
+  FErrorCode := '';
+  FAuthRefused := False;
   FRetorno.Clear;
 
   // D14: sucesso/erro é decidido pelo STATUS HTTP (200 = ok), não só pelo
@@ -240,6 +251,9 @@ begin
         if Assigned(LcJson.GetValue('error')) then
           LcError := LcJson.GetValue('error').Value;
         FRetorno.Mensagem := LcError;
+        // D-SY13: codigo tipado do erro (ex.: SYNC_KEY_INACTIVE)
+        if Assigned(LcJson.GetValue('code')) then
+          FErrorCode := LcJson.GetValue('code').Value;
       End;
     End
     else
@@ -249,6 +263,9 @@ begin
   finally
     if Assigned(LcJson) then LcJson.Free;
   end;
+
+  // D-SY13: recusa da CHAVE (vale mesmo com corpo nao-JSON no 401 - A-SY1)
+  FAuthRefused := IsRecusaDaChave(FRetorno.ID, FErrorCode);
 end;
 
 procedure TGeneralWeb.send;
@@ -261,6 +278,8 @@ begin
     FSkip := False;
     FExternalCode := '';
     FClearExternalCode := False;
+    FErrorCode := '';
+    FAuthRefused := False;
     GenerateJson;
     // D13: filtro nao casou — nada a enviar, nada a marcar (sem erro).
     if FSkip then

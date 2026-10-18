@@ -22,6 +22,7 @@ uses/paths e testar é do Valdo. A setes-sync do outro lado JÁ está pronta e p
 | 7 | `07_sincronia_por_processo.md` | D8–D12 | NOTA = único fato gerador; hierarquia TInvoice*; renumeração Seqs 21–24; TB_PEDIDO fora da fila |
 | 8 | `08_fila_marca_unica.md` | D13 | Marca ÚNICA no SRC_LOG (só de quem envia), filtros DISJUNTOS, ordem de serviço COMPLETA no /order-service, limpeza por idade |
 | 10 | `10_preco_mercadoria_d_sy.md` | D-SY2, D-SY5, D-SY6 (2026-10-17) | Remove o `updateList` morto com a inversão comissão × margem; indEscala real (`INDESCALA`, não mais 'N' fixo); aplicação decodificada do Base64. Depois de compilar: Primeira carga → Produtos |
+| 11 | `11_medida_categoria_chave_inativa.md` | D-SY10, D-SY11, D-SY13 (2026-10-18) | Produto manda a ABREVIAÇÃO da medida (`measureAbbreviation` — chave única na central, mesma do setes-api); conversão grupo/subgrupo cria a árvore de categorias por NATUREZA ('P' mercadoria, 'S' serviço) e reaponta cada produto; chave recusada (401/403 `SYNC_KEY_INACTIVE`) deixa a sincronia INATIVA sem marcar o `SRC_LOG` até **Tarefas → Ativar sincronia** (unit nova `function/un_sync_key_state.pas`). Depois de compilar: setes-sync novo no ar ANTES → Preparar o banco → Primeira carga → Categorias + Medidas + Produtos, sem período (rebobinar `LAST_UPDATE` NÃO reenvia) |
 
 ### Onda 0 — bootstrap automático de TB_LISTA_SINCRONIA (NOVO)
 
@@ -73,5 +74,9 @@ uses/paths e testar é do Valdo. A setes-sync do outro lado JÁ está pronta e p
 - 409 com code `*_NOT_SYNCED` = dependência ainda não sincronizada → o registro
   fica com SRC_LOG e o próprio ciclo de 5 min reenvia (auto-cura da ordem).
 - Marca/Embalagem/Medida/Forma de pagamento viajam por DESCRIÇÃO (id local morre).
+  **Desde o patch 11 (D-SY10, 2026-10-18) a Medida viaja pela ABREVIAÇÃO** (chave única na central).
+- **Chave recusada (patch 11, D-SY13)**: 401 (`SYNC_KEY_MISSING`/`SYNC_KEY_INVALID`) ou 403
+  `SYNC_KEY_INACTIVE` NÃO é erro do registro — o sincronizador não grava `SRC_LOG`, fica INATIVO e só
+  volta por Tarefas → Ativar sincronia (consulta `GET /sync-key/status`).
 - Financeiro: PK natural (pedido+terminal+parcela) — FIN_CODIGO não viaja.
 - XMLs: conteúdo COMPLETO em Base64 → disco `<cnpj>/<ano>/<mes>/` no servidor.

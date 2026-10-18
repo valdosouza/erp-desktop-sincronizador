@@ -14,7 +14,11 @@ Type
       // (não são colunas reais) — a resolução mora aqui, não no controller.
       function GetBrandName(pCodigo: Integer): String;
       function GetPackageName(pCodigo: Integer): String;
-      function GetMeasureName(pCodigo: Integer): String;
+      // D-SY10 (Valdo, 2026-10-18): a medida e unica na setes_central e a
+      // CHAVE e a ABREVIACAO (mesma sistematica do setes-api) - vai a
+      // abreviacao (measureAbbreviation) e a descricao (nameMeasure, atributo
+      // da criacao na web; executavel antigo so mandava a descricao).
+      procedure GetMeasure(pCodigo: Integer; out pAbreviatura, pDescricao: String);
       // D-SY5 / D-SY6 (Valdo, 2026-10-17)
       function NormalizeIndEscala(const pValue: String): String;
       function DecodeAplicacao(const pValue: String): String;
@@ -63,17 +67,28 @@ begin
   End;
 end;
 
-function TMerchandiseSendWeb.GetMeasureName(pCodigo: Integer): String;
+procedure TMerchandiseSendWeb.GetMeasure(pCodigo: Integer; out pAbreviatura, pDescricao: String);
 Var
   LcCtrl: TControllerMedida;
 begin
-  Result := 'UND';
+  // Medida inexistente no Firebird: ABREVIACAO 'UND' (D-SY10 - antes o 'UND'
+  // ia como DESCRICAO e a web criava uma 2a linha 'UND' sem abreviacao ao
+  // lado da UNIDADE/UND). Descricao vazia: a web reusa a linha da abreviacao
+  // e, se ela nao existir na central, cria com a propria abreviacao como
+  // descricao.
+  // Medida com MED_ABREVIATURA vazia: abreviacao '' -> a web resolve pela
+  // descricao, como antes (com aviso no log do setes-sync).
+  pAbreviatura := 'UND';
+  pDescricao   := '';
   LcCtrl := TControllerMedida.Create(nil);
   Try
     LcCtrl.Registro.Codigo := pCodigo;
     LcCtrl.getbyId;
     if LcCtrl.exist then
-      Result := LcCtrl.Registro.Descricao;
+    Begin
+      pAbreviatura := Trim(LcCtrl.Registro.Abreviatura);
+      pDescricao   := Trim(LcCtrl.Registro.Descricao);
+    End;
   Finally
     LcCtrl.DisposeOf;
   End;
@@ -142,6 +157,8 @@ Var
   LcProduct,
   LcMerchandise,
   LcStock: TJSONObject;
+  LcMedAbrev,
+  LcMedDesc: String;
 begin
   inherited;
   FCtrl.Registro.Codigo := FCodigo;
@@ -212,7 +229,11 @@ begin
 
       LcStock := TJSONObject.Create;
       LcStock.AddPair('namePackage', GetPackageName(FCtrl.Registro.CodigoEmbalagem));
-      LcStock.AddPair('nameMeasure', GetMeasureName(FCtrl.Registro.MedidaComercial));
+      // D-SY10: a CHAVE da medida e a abreviacao; a descricao vai junto
+      // (atributo da criacao na web; servidor antigo ainda le o nameMeasure)
+      GetMeasure(FCtrl.Registro.MedidaComercial, LcMedAbrev, LcMedDesc);
+      LcStock.AddPair('measureAbbreviation', LcMedAbrev);
+      LcStock.AddPair('nameMeasure', LcMedDesc);
       LcStock.AddPair('codebar', FCtrl.Obj.Estoque.CodigoBarra);
       LcStock.AddPair('st', FCtrl.Obj.Estoque.TemST);
       LcStock.AddPair('divisor', TJSONNumber.Create(FCtrl.Obj.Estoque.Divisor));

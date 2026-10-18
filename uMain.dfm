@@ -1170,6 +1170,10 @@ object Principal: TPrincipal
         Caption = 'Prepara Local'
         OnClick = MnuPreparaLocalClick
       end
+      object MnuAtivarSincronia: TMenuItem
+        Caption = 'Ativar sincronia'
+        OnClick = MnuAtivarSincroniaClick
+      end
     end
   end
   object TmHide: TTimer
