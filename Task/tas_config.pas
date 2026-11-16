@@ -163,6 +163,9 @@ type
     procedure FC_RetornoNFCe;
     procedure FC_RetornoNFSe;
     procedure FC_Arquivos;
+
+  protected
+    // Sem chamada hoje, mas guardados de proposito (protected nao gera H2219):
     procedure FC_CartaCorrecao;    // Seq 33 - SET_ON 'N' ate a Rodada 4 (fora da checklist)
     // conversao grupo/subgrupo -> categoria (delegate do motor do bootstrap, nao enfileira)
     procedure Fc_GrupoToCategoria;

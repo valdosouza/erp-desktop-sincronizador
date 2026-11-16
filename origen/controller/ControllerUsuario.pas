@@ -73,19 +73,21 @@ end;
 function TControllerUsuario.Migra: boolean;
 begin
   SaveObj(Registro);
+  Result := True;
 end;
 
 function TControllerUsuario.Replace: boolean;
 begin
   replaceObj(Registro);
+  Result := True;
 end;
 
 function TControllerUsuario.ResetaSenha: boolean;
 var
   Lc_Qry : TIBQuery;
 begin
+  Lc_Qry := GeraQuery;
   Try
-    Lc_Qry := GeraQuery;
     with Lc_Qry do
     Begin
       sql.add(concat(
@@ -97,6 +99,7 @@ begin
       ParamByName('USU_CODIGO').AsInteger:= Registro.Codigo;
       ParamByName('USU_SENHA').AsAnsiString:='827CCB0EEA8A706C4C34A16891F84E7B';//senha12345
       ExecSQL;
+      Result := True;
     end;
   Finally
     FinalizaQuery(Lc_Qry);
@@ -109,6 +112,7 @@ begin
   if Registro.Codigo = 0 then
     Registro.Codigo := Generator('GN_USUARIO');
   SaveObj(Registro);
+  Result := True;
 end;
 
 function TControllerUsuario.update: boolean;
@@ -125,8 +129,8 @@ function TControllerUsuario.getByCard: Boolean;
 var
   Lc_Qry : TIBQuery;
 begin
+  Lc_Qry := GeraQuery;
   Try
-    Lc_Qry := GeraQuery;
     with Lc_Qry do
     Begin
       sql.add(concat('SELECT * ',
@@ -136,7 +140,8 @@ begin
       paramByName('USU_AUTH_CARD').AsString := Registro.CartaoAutorizacao;
       Active := True;
       FetchAll;
-      exist := (RecordCount > 0)
+      exist := (RecordCount > 0);
+      Result := exist;
     end;
   Finally
     FinalizaQuery(Lc_Qry);
@@ -154,8 +159,8 @@ function TControllerUsuario.getByLogin: boolean;
 var
   Lc_Qry : TIBQuery;
 begin
+  Lc_Qry := GeraQuery;
   Try
-    Lc_Qry := GeraQuery;
     with Lc_Qry do
     Begin
       sql.add(concat('SELECT * ',
@@ -166,6 +171,7 @@ begin
       Active := True;
       FetchAll;
       exist  := ( RecordCount > 0 );
+      Result := exist;
       if exist then
       Begin
         clearObj(Registro);
@@ -182,8 +188,8 @@ var
   Lc_Qry : TIBQuery;
   LITem : TUsuario;
 begin
+  Lc_Qry := GeraQuery;
   Try
-    Lc_Qry := GeraQuery;
     with Lc_Qry do
     Begin
       // Sem periodo (carga completa): todos os usuarios. Com periodo:
@@ -215,6 +221,7 @@ begin
         Lista.add(LITem);
         next;
       end;
+      Result := True;
     end;
   Finally
     FinalizaQuery(Lc_Qry);
@@ -225,9 +232,9 @@ function TControllerUsuario.getVendedorID: Integer;
 var
   Lc_Qry : TIBQuery;
 begin
+  Result := 0;
+  Lc_Qry := GeraQuery;
   Try
-    Result := 0;
-    Lc_Qry := GeraQuery;
     with Lc_Qry do
     Begin
       sql.add(concat(

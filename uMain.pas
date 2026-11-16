@@ -1001,9 +1001,10 @@ Var
   LcCodigo : String;
 {$ENDIF}
 begin
-  REsult := True;
-  {$IFNDEF DEBUG}
-  REsult := False;
+  {$IFDEF DEBUG}
+  Result := True;
+  {$ELSE}
+  Result := False;
   if (InputQuery('Autoriza��o da Acesso ', 'Digite o Codigo de Acessso', LcCodigo)) then
   Begin
     if LcCodigo ='eqpm50m$' then
