@@ -68,6 +68,7 @@ Type
     function insere:boolean;
     function updateCodigoPedido:Boolean;
     procedure getList;
+    function getListCodigos: TArray<Integer>;
     function getTotalValue:Real;
     procedure getSincronia;
     procedure ClearDataObjecto;
@@ -1262,6 +1263,72 @@ begin
     FinalizaQuery(Lc_Qry);
   End;
 
+end;
+
+// Primeira carga: so os CODIGOS (NFL_CODIGO), mesmo filtro do getList, sem montar a entidade (RTTI) nem trazer
+// todas as colunas - ver getListCodigos de TControllerProduto.
+function TControllerNotaFiscal.getListCodigos: TArray<Integer>;
+var
+  Lc_Qry : TIBQuery;
+  LcCodigos : TList<Integer>;
+begin
+  LcCodigos := TList<Integer>.Create;
+  Lc_Qry := GeraQuery;
+  Try
+    with Lc_Qry do
+    Begin
+      sql.add(concat('SELECT N.NFL_CODIGO ',
+                      'FROM TB_NOTA_FISCAL N '
+                ));
+      if FTipoPedido > 0 then
+      Begin
+        sql.add(concat('  INNER JOIN TB_PEDIDO P ',
+                       '  ON (N.NFL_CODPED = P.PED_CODIGO) '
+                  ));
+      End;
+      sql.add('WHERE ( NFL_CODIGO IS NOT NULL ) ');
+
+      if FPeriodo then
+        sql.add(' AND ( NFL_DT_EMISSAO BETWEEN :DATAINI AND :DATAFIM ) ');
+
+      if FEstabelecimento > 0 then
+        sql.add(' and ( NFL_CODMHA=:NFL_CODMHA )  ');
+
+      if FTipoPedido > 0 then
+        sql.add(' and ( PED_TIPO=:PED_TIPO )  ');
+
+      // 'TODAS' (primeira carga 2026-08-04): sem filtro de tipo - avulsa E
+      // notas de processo na mesma lista (a fila tem 1 linha por nota e os
+      // filtros disjuntos das classes roteiam no envio)
+      if ( FTipoNota = 'EM' ) then
+        sql.add(' AND ( N.nfl_tipo = ''EM'' )' )
+      else if ( FTipoNota <> 'TODAS' ) then
+        sql.add(' AND ( N.nfl_tipo <> ''EM'' )' );
+
+      if FEstabelecimento > 0 then
+        ParamByName('NFL_CODMHA').AsInteger := FEstabelecimento;
+
+      if FTipoPedido > 0 then
+        ParamByName('PED_TIPO').AsInteger := FTipoPedido;
+
+      if FPeriodo then
+      Begin
+        ParamByName('DATAINI').AsDateTime := FDataInicial;
+        ParamByName('DATAFIM').AsDateTime := FDataFinal;
+      End;
+
+      Active := True;
+      while not Eof do
+      Begin
+        LcCodigos.Add(FieldByName('NFL_CODIGO').AsInteger);
+        Next;
+      End;
+    end;
+    Result := LcCodigos.ToArray;
+  Finally
+    FinalizaQuery(Lc_Qry);
+    LcCodigos.Free;
+  End;
 end;
 
 procedure TControllerNotaFiscal.getList;

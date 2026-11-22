@@ -65,6 +65,8 @@ Type
     function getProdutoAvulso:Boolean;
     procedure ReOrdenaSequenciaCodigo;
     procedure getList(limite:String);
+    // Lista so os CODIGOS (sem montar TProduto: sem blobs nem RTTI) - usada na primeira carga
+    function getListCodigos: TArray<Integer>;
     function getDescricao:String;
     function getField(codigo:Integer;Field:String):String;
     Function getByDescricao(descricao:String):Integer;
@@ -974,6 +976,61 @@ begin
     end;
   Finally
     FinalizaQuery(Lc_Qry);
+  End;
+end;
+
+function TControllerProduto.getListCodigos: TArray<Integer>;
+var
+  Lc_Qry : TIBQuery;
+  LcCodigos : TList<Integer>;
+begin
+  // Mesmo filtro do getList (carga completa ou por periodo), mas devolvendo so
+  // PRO_CODIGO: o montar TProduto completo (58 campos por RTTI + 2 blobs de texto)
+  // levava segundos por produto no IBX x Firebird 5 e a primeira carga so precisa
+  // do codigo para enfileirar (Fc_InsertSicronia).
+  LcCodigos := TList<Integer>.Create;
+  Lc_Qry := GeraQuery;
+  Try
+    with Lc_Qry do
+    Begin
+      Active := False;
+      sql.Clear;
+      if FPeriodo then
+      Begin
+        sql.add(concat(
+                'SELECT DISTINCT PT.PRO_CODIGO ',
+                'FROM TB_PEDIDO PD ',
+                '   INNER JOIN TB_NOTA_FISCAL NF ',
+                '   ON (NF.NFL_CODPED = PD.PED_CODIGO) ',
+                '   INNER JOIN TB_ITENS_NFL IT ',
+                '   ON (IT.ITF_CODPED = PD.PED_CODIGO) ',
+                '   INNER JOIN TB_PRODUTO PT ',
+                '   ON (PT.PRO_CODIGO = IT.ITF_CODPRO) ',
+                'WHERE NF.NFL_DT_EMISSAO BETWEEN :DATAINICIAL AND :DATAFINAL'
+        ));
+        ParamByName('DATAINICIAL').AsDateTime := DataInicial;
+        ParamByName('DATAFINAL').AsDateTime  := DataFinal;
+      End
+      else
+      Begin
+        sql.add(concat(
+                'SELECT p.PRO_CODIGO ',
+                'FROM TB_PRODUTO p ',
+                'WHERE (p.PRO_CODIGO IS NOT NULL) AND (p.PRO_TIPO <> ''A'') ',
+                'ORDER BY p.PRO_CODIGO '
+        ));
+      End;
+      Active := True;
+      while not Eof do
+      Begin
+        LcCodigos.Add(FieldByName('PRO_CODIGO').AsInteger);
+        Next;
+      End;
+    End;
+    Result := LcCodigos.ToArray;
+  Finally
+    FinalizaQuery(Lc_Qry);
+    LcCodigos.Free;
   End;
 end;
 

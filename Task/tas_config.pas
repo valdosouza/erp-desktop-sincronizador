@@ -294,6 +294,9 @@ end;
 
 procedure TTasConfig.FimEtapa(const pRotulo: String; pQuantidade: Integer);
 begin
+  // Fecha a etapa na fila: UM Commit para todas as linhas inseridas por ela.
+  if Assigned(FCargaTx) and FCargaTx.InTransaction then
+    FCargaTx.Commit;
   FResumoCarga := concat(FResumoCarga,
     '  - ', pRotulo, ': ', IntToStr(pQuantidade), ' registro(s)', sLineBreak);
   // Garante o gauge fechado em 100% da tabela que terminou, mesmo que o
@@ -341,14 +344,15 @@ end;
 
 function TTasConfig.ExecCargaRet(const pSql: String): Integer;
 begin
-  // Commit por tabela: cada Fc_* que termina ja esta segura na fila.
+  // Commit por tabela (FimEtapa): cada Fc_* que termina fica segura na fila.
+  // Antes cada INSERT fazia o proprio Commit (~50 ms por linha: 20 linhas/s);
+  // agora a transacao fica aberta durante a etapa e o Commit e um so.
   FCargaQry.Close;
   if not FCargaTx.InTransaction then
     FCargaTx.StartTransaction;
   FCargaQry.SQL.Text := pSql;
   FCargaQry.ExecSQL;
   Result := FCargaQry.RowsAffected;
-  FCargaTx.Commit;
 end;
 
 // ---- cadastros (Seqs 1-19 do catalogo) ----
@@ -466,6 +470,7 @@ end;
 procedure TTasConfig.Fc_Produto;
 Var
   Lc_Ctrl : TControllerProduto;
+  Lc_Codigos : TArray<Integer>;
   I : Integer;
 begin
   // Cobre mercadoria E servico (Seqs 6/19): a fila tem UMA linha por
@@ -477,11 +482,12 @@ begin
     Lc_Ctrl.Periodo     := FCargaPeriodo;
     Lc_Ctrl.DataInicial := FCargaDataIni;
     Lc_Ctrl.DataFinal   := FCargaDataFim;
-    Lc_Ctrl.getList('');
-    IniciaProgressoRegistros(Lc_Ctrl.Lista.Count);
-    for I := 0 to Lc_Ctrl.Lista.Count -1 do
-      Fc_InsertSicronia('TB_PRODUTO','PRO_CODIGO',Lc_Ctrl.Lista[I].Codigo);
-    FimEtapa('Produtos', Lc_Ctrl.Lista.Count);
+    // So os codigos (sem montar TProduto completo: era a causa da lentidao)
+    Lc_Codigos := Lc_Ctrl.getListCodigos;
+    IniciaProgressoRegistros(Length(Lc_Codigos));
+    for I := 0 to High(Lc_Codigos) do
+      Fc_InsertSicronia('TB_PRODUTO','PRO_CODIGO',Lc_Codigos[I]);
+    FimEtapa('Produtos', Length(Lc_Codigos));
   finally
     FreeAndNil(Lc_Ctrl);
   end;
@@ -512,6 +518,7 @@ end;
 procedure TTasConfig.Fc_Preco;
 Var
   Lc_Ctrl : TControllerPreco;
+  Lc_Codigos : TArray<Integer>;
   I : Integer;
 begin
   InicioEtapa('Precos');
@@ -521,11 +528,11 @@ begin
     Lc_Ctrl.Periodo     := FCargaPeriodo;
     Lc_Ctrl.DataInicial := FCargaDataIni;
     Lc_Ctrl.DataFinal   := FCargaDataFim;
-    Lc_Ctrl.getList;
-    IniciaProgressoRegistros(Lc_Ctrl.Lista.Count);
-    for I := 0 to Lc_Ctrl.Lista.Count -1 do
-      Fc_InsertSicronia('TB_PRECO','PRC_CODIGO',Lc_Ctrl.Lista[I].Codigo);
-    FimEtapa('Precos', Lc_Ctrl.Lista.Count);
+    Lc_Codigos := Lc_Ctrl.getListCodigos; // so os codigos (sem montar a entidade completa)
+    IniciaProgressoRegistros(Length(Lc_Codigos));
+    for I := 0 to High(Lc_Codigos) do
+      Fc_InsertSicronia('TB_PRECO','PRC_CODIGO',Lc_Codigos[I]);
+    FimEtapa('Precos', Length(Lc_Codigos));
   finally
     FreeAndNil(Lc_Ctrl);
   end;
@@ -557,6 +564,7 @@ end;
 procedure TTasConfig.Fc_Estoque;
 Var
   Lc_Ctrl : TControllerEstoque;
+  Lc_Codigos : TArray<Integer>;
   I : Integer;
 begin
   InicioEtapa('Saldos de estoque');
@@ -566,11 +574,11 @@ begin
     Lc_Ctrl.Periodo     := FCargaPeriodo;
     Lc_Ctrl.DataInicial := FCargaDataIni;
     Lc_Ctrl.DataFinal   := FCargaDataFim;
-    Lc_Ctrl.getList;
-    IniciaProgressoRegistros(Lc_Ctrl.Lista.Count);
-    for I := 0 to Lc_Ctrl.Lista.Count -1 do
-      Fc_InsertSicronia('TB_ESTOQUE','EST_CODIGO',Lc_Ctrl.Lista[I].Codigo);
-    FimEtapa('Saldos de estoque', Lc_Ctrl.Lista.Count);
+    Lc_Codigos := Lc_Ctrl.getListCodigos; // so os codigos (sem montar a entidade completa)
+    IniciaProgressoRegistros(Length(Lc_Codigos));
+    for I := 0 to High(Lc_Codigos) do
+      Fc_InsertSicronia('TB_ESTOQUE','EST_CODIGO',Lc_Codigos[I]);
+    FimEtapa('Saldos de estoque', Length(Lc_Codigos));
   finally
     FreeAndNil(Lc_Ctrl);
   end;
@@ -745,6 +753,7 @@ end;
 procedure TTasConfig.Fc_NotaFiscal;
 Var
   Lc_Ctrl : TControllerNotaFiscal;
+  Lc_Codigos : TArray<Integer>;
   I : Integer;
 begin
   // UMA linha na fila por nota (Seqs 20-24): avulsa + processos de
@@ -759,11 +768,11 @@ begin
     Lc_Ctrl.DataFinal   := FCargaDataFim;
     Lc_Ctrl.TipoNota    := 'TODAS';
     Lc_Ctrl.TipoPedido  := 0;
-    Lc_Ctrl.getList;
-    IniciaProgressoRegistros(Lc_Ctrl.Lista.Count);
-    for I := 0 to Lc_Ctrl.Lista.Count -1 do
-      Fc_InsertSicronia('TB_NOTA_FISCAL','NFL_CODIGO',Lc_Ctrl.Lista[I].Codigo);
-    FimEtapa('Notas fiscais (todos os fluxos)', Lc_Ctrl.Lista.Count);
+    Lc_Codigos := Lc_Ctrl.getListCodigos; // so os codigos (sem montar a entidade completa)
+    IniciaProgressoRegistros(Length(Lc_Codigos));
+    for I := 0 to High(Lc_Codigos) do
+      Fc_InsertSicronia('TB_NOTA_FISCAL','NFL_CODIGO',Lc_Codigos[I]);
+    FimEtapa('Notas fiscais (todos os fluxos)', Length(Lc_Codigos));
   finally
     FreeAndNil(Lc_Ctrl);
   end;
@@ -772,6 +781,7 @@ end;
 procedure TTasConfig.FC_MovimentoEstoque;
 Var
   Lc_Ctrl : TControllerCtrlEstoque;
+  Lc_Codigos : TArray<Integer>;
   I : Integer;
 begin
   InicioEtapa('Movimentacao de estoque');
@@ -781,11 +791,11 @@ begin
     Lc_Ctrl.Periodo     := FCargaPeriodo;
     Lc_Ctrl.DataInicial := FCargaDataIni;
     Lc_Ctrl.DataFinal   := FCargaDataFim;
-    Lc_Ctrl.getList;
-    IniciaProgressoRegistros(Lc_Ctrl.Lista.Count);
-    for I := 0 to Lc_Ctrl.Lista.Count -1 do
-      Fc_InsertSicronia('TB_CTRL_ESTOQUE','CET_CODIGO',Lc_Ctrl.Lista[I].Codigo);
-    FimEtapa('Movimentacao de estoque', Lc_Ctrl.Lista.Count);
+    Lc_Codigos := Lc_Ctrl.getListCodigos; // so os codigos (sem montar a entidade completa)
+    IniciaProgressoRegistros(Length(Lc_Codigos));
+    for I := 0 to High(Lc_Codigos) do
+      Fc_InsertSicronia('TB_CTRL_ESTOQUE','CET_CODIGO',Lc_Codigos[I]);
+    FimEtapa('Movimentacao de estoque', Length(Lc_Codigos));
   finally
     FreeAndNil(Lc_Ctrl);
   end;
@@ -794,6 +804,7 @@ end;
 procedure TTasConfig.Fc_Financeiro;
 Var
   Lc_Ctrl : TControllerFinanceiro;
+  Lc_Codigos : TArray<Integer>;
   I : Integer;
 begin
   // Periodo pela NOTA vinculada (FIN_CODNFL = orderId do espelho).
@@ -804,11 +815,11 @@ begin
     Lc_Ctrl.Periodo     := FCargaPeriodo;
     Lc_Ctrl.DataInicial := FCargaDataIni;
     Lc_Ctrl.DataFinal   := FCargaDataFim;
-    Lc_Ctrl.getlist;
-    IniciaProgressoRegistros(Lc_Ctrl.Lista.Count);
-    for I := 0 to Lc_Ctrl.Lista.Count -1 do
-      Fc_InsertSicronia('TB_FINANCEIRO','FIN_CODIGO',Lc_Ctrl.Lista[I].Codigo);
-    FimEtapa('Financeiro', Lc_Ctrl.Lista.Count);
+    Lc_Codigos := Lc_Ctrl.getListCodigos; // so os codigos (sem montar a entidade completa)
+    IniciaProgressoRegistros(Length(Lc_Codigos));
+    for I := 0 to High(Lc_Codigos) do
+      Fc_InsertSicronia('TB_FINANCEIRO','FIN_CODIGO',Lc_Codigos[I]);
+    FimEtapa('Financeiro', Length(Lc_Codigos));
   finally
     FreeAndNil(Lc_Ctrl);
   end;
@@ -817,6 +828,7 @@ end;
 procedure TTasConfig.FC_MovimentoFinanceiro;
 Var
   Lc_Ctrl : TControllerMovimentoFinanceiro;
+  Lc_Codigos : TArray<Integer>;
   I : Integer;
 begin
   InicioEtapa('Movimento financeiro (extrato)');
@@ -826,11 +838,11 @@ begin
     Lc_Ctrl.Periodo     := FCargaPeriodo;
     Lc_Ctrl.DataInicial := FCargaDataIni;
     Lc_Ctrl.DataFinal   := FCargaDataFim;
-    Lc_Ctrl.getList;
-    IniciaProgressoRegistros(Lc_Ctrl.Lista.Count);
-    for I := 0 to Lc_Ctrl.Lista.Count -1 do
-      Fc_InsertSicronia('TB_MOVIM_FINANCEIRO','MVF_CODIGO',Lc_Ctrl.Lista[I].Codigo);
-    FimEtapa('Movimento financeiro (extrato)', Lc_Ctrl.Lista.Count);
+    Lc_Codigos := Lc_Ctrl.getListCodigos; // so os codigos (sem montar a entidade completa)
+    IniciaProgressoRegistros(Length(Lc_Codigos));
+    for I := 0 to High(Lc_Codigos) do
+      Fc_InsertSicronia('TB_MOVIM_FINANCEIRO','MVF_CODIGO',Lc_Codigos[I]);
+    FimEtapa('Movimento financeiro (extrato)', Length(Lc_Codigos));
   finally
     FreeAndNil(Lc_Ctrl);
   end;
@@ -861,6 +873,7 @@ end;
 procedure TTasConfig.FC_RetornoNFe;
 Var
   Lc_Ctrl : TControllerREtornoNfe;
+  Lc_Codigos : TArray<Integer>;
   I : Integer;
 begin
   InicioEtapa('Retornos NF-e');
@@ -870,11 +883,11 @@ begin
     Lc_Ctrl.Periodo     := FCargaPeriodo;
     Lc_Ctrl.DataInicial := FCargaDataIni;
     Lc_Ctrl.DataFinal   := FCargaDataFim;
-    Lc_Ctrl.getList;
-    IniciaProgressoRegistros(Lc_Ctrl.Lista.Count);
-    for I := 0 to Lc_Ctrl.Lista.Count -1 do
-      Fc_InsertSicronia('TB_RETORNO_NFE','NFE_CODIGO',Lc_Ctrl.Lista[I].Codigo);
-    FimEtapa('Retornos NF-e', Lc_Ctrl.Lista.Count);
+    Lc_Codigos := Lc_Ctrl.getListCodigos; // so os codigos (sem montar a entidade completa)
+    IniciaProgressoRegistros(Length(Lc_Codigos));
+    for I := 0 to High(Lc_Codigos) do
+      Fc_InsertSicronia('TB_RETORNO_NFE','NFE_CODIGO',Lc_Codigos[I]);
+    FimEtapa('Retornos NF-e', Length(Lc_Codigos));
   finally
     FreeAndNil(Lc_Ctrl);
   end;

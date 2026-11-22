@@ -91,6 +91,7 @@ Type
     // Primeira carga (padrao Fc_Usuario, Valdo 2026-08-04): com Periodo
     // filtra pela PROPRIA data do movimento (CET_DATA)
     function getList:Boolean;
+    function getListCodigos: TArray<Integer>;
 
     function ListarProdutoMovimentado:Boolean;
     function  ListarMovimento:Boolean;
@@ -788,6 +789,43 @@ Begin
     End;
   Finally
     FinalizaQuery(Lc_Qry);
+  End;
+end;
+
+// Primeira carga: so os CODIGOS (CET_CODIGO), mesmo filtro do getList, sem montar a entidade (RTTI) nem trazer
+// todas as colunas - ver getListCodigos de TControllerProduto.
+function TControllerCtrlEstoque.getListCodigos: TArray<Integer>;
+var
+  Lc_Qry : TIBQuery;
+  LcCodigos : TList<Integer>;
+begin
+  LcCodigos := TList<Integer>.Create;
+  Lc_Qry := GeraQuery;
+  Try
+    with Lc_Qry do
+    Begin
+      active := False;
+      sql.Clear;
+      sql.add('SELECT CET_CODIGO FROM TB_CTRL_ESTOQUE WHERE (CET_CODIGO IS NOT NULL) ');
+      // Primeira carga por periodo (padrao Fc_Usuario, Valdo 2026-08-04):
+      // movimentacao pela PROPRIA data
+      if Periodo then
+      Begin
+        sql.add(' AND (CET_DATA BETWEEN :DATAINICIAL AND :DATAFINAL) ');
+        ParamByName('DATAINICIAL').AsDateTime := DataInicial;
+        ParamByName('DATAFINAL').AsDateTime  := DataFinal;
+      End;
+      Active := True;
+      while not Eof do
+      Begin
+        LcCodigos.Add(FieldByName('CET_CODIGO').AsInteger);
+        Next;
+      End;
+    end;
+    Result := LcCodigos.ToArray;
+  Finally
+    FinalizaQuery(Lc_Qry);
+    LcCodigos.Free;
   End;
 end;
 

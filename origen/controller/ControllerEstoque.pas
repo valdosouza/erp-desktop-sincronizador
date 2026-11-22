@@ -32,6 +32,7 @@ Type
     Function delete:boolean;
     procedure getbyId;
     procedure getList;
+    function getListCodigos: TArray<Integer>;
     procedure getListaEstoques;
     Function getIdByEstoqueProduto:Integer;
     function getByCodigo:Boolean;
@@ -226,6 +227,67 @@ Begin
   Finally
     FinalizaQuery(Lc_Qry);
   End;
+end;
+
+// Primeira carga: so os CODIGOS (EST_CODIGO), mesmo filtro do getList, sem montar a entidade (RTTI) nem trazer
+// todas as colunas - ver getListCodigos de TControllerProduto.
+function TControllerEstoque.getListCodigos: TArray<Integer>;
+var
+  Lc_Qry : TIBQuery;
+  LcCodigos : TList<Integer>;
+begin
+  LcCodigos := TList<Integer>.Create;
+  Lc_Qry := GeraQuery;
+  Try
+    with Lc_Qry do
+    Begin
+      active := False;
+      sql.Clear;
+      sql.add('SELECT EST_CODIGO FROM TB_ESTOQUE where (EST_CODIGO > 0 ) ');
+      if Registro.CodigoProduto > 0 then
+        sql.add(' AND (EST_CODPRO=:PRO_CODIGO) ');
+      if Registro.CodigoEstoque > 0 then
+        sql.add(' AND (EST_CODETS=:ETS_CODIGO) ');
+
+      sql.add(' ORDER BY EST_CODIGO ');
+
+      //Passagem de Parametro
+      if Registro.CodigoProduto > 0 then
+        ParamByName('PRO_CODIGO').AsInteger := Registro.CodigoProduto;
+      if Registro.CodigoEstoque > 0 then
+        ParamByName('ETS_CODIGO').AsInteger := Registro.CodigoEstoque;
+      // Primeira carga por periodo (padrao Fc_Usuario, Valdo 2026-08-04):
+      // saldo de estoque de produto movimentado em nota do periodo
+      if Periodo then
+      Begin
+        sql.Clear;
+        sql.add(concat(
+                'SELECT DISTINCT ET.EST_CODIGO ',
+                'FROM TB_PEDIDO PD ',
+                '   INNER JOIN TB_NOTA_FISCAL NF ',
+                '   ON (NF.NFL_CODPED = PD.PED_CODIGO) ',
+                '   INNER JOIN TB_ITENS_NFL IT ',
+                '   ON (IT.ITF_CODPED = PD.PED_CODIGO) ',
+                '   INNER JOIN TB_ESTOQUE ET ',
+                '   ON (ET.EST_CODPRO = IT.ITF_CODPRO) ',
+                'WHERE NF.NFL_DT_EMISSAO BETWEEN :DATAINICIAL AND :DATAFINAL'
+        ));
+        ParamByName('DATAINICIAL').AsDateTime := DataInicial;
+        ParamByName('DATAFINAL').AsDateTime  := DataFinal;
+      End;
+      Active := True;
+      while not Eof do
+      Begin
+        LcCodigos.Add(FieldByName('EST_CODIGO').AsInteger);
+        Next;
+      End;
+    end;
+    Result := LcCodigos.ToArray;
+  Finally
+    FinalizaQuery(Lc_Qry);
+    LcCodigos.Free;
+  End;
+
 end;
 
 procedure TControllerEstoque.getList;

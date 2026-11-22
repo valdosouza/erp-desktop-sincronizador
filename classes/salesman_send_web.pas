@@ -3,7 +3,7 @@ unit salesman_send_web;
 interface
 
 uses System.SysUtils,general_web,REST.Json, ControllerColaborador, System.JSON,
-     ControllerUf, ControllerCidade;
+     ControllerUf, ControllerCidade, ControllerEndereco;
 
 Type
   TSalesManSendWeb = class(TGeneralWeb)
@@ -16,6 +16,8 @@ Type
       function GetExternalCodeColaborador: String;
       function DateToIso(pData: TDate): String;
       function OnlyDigits(pTexto: String): String;
+      // codigo da MINHA EMPRESA (TB_EMPRESA.EMP_TIPO = 0); 0 se nao houver
+      function GetCodigoMinhaEmpresa: Integer;
     protected
       procedure GenerateJson;Override;
     public
@@ -77,6 +79,29 @@ begin
   inherited;
 end;
 
+function TSalesManSendWeb.GetCodigoMinhaEmpresa: Integer;
+Var
+  Lc_Qry : TIBQuery;
+begin
+  Result := 0;
+  Lc_Qry := FCtrl.GeraQuery;
+  Try
+    with Lc_Qry do
+    Begin
+      Active := False;
+      Sql.Clear;
+      Sql.Add('SELECT FIRST 1 EMP_CODIGO FROM TB_EMPRESA ' +
+              'WHERE (EMP_TIPO = 0) AND (COALESCE(DELETED, ''N'') <> ''S'') ' +
+              'ORDER BY EMP_CODIGO');
+      Active := True;
+      if not Eof then
+        Result := FieldByName('EMP_CODIGO').AsInteger;
+    end;
+  Finally
+    FCtrl.FinalizaQuery(Lc_Qry);
+  End;
+end;
+
 function TSalesManSendWeb.OnlyDigits(pTexto: String): String;
 begin
   Result := unMaskField(Trim(pTexto));
@@ -109,6 +134,10 @@ Var
   LcCidade       : TControllerCidade;
   LcCodigoEstado : Integer;
   LcCodigoCidade : Integer;
+  LcCodigoPais   : Integer;
+  LcEnd          : TControllerEndereco;
+  LcEnderecoOk   : Boolean;
+  LcKind, LcRua, LcNum, LcCompl, LcBairro, LcCep : String;
 begin
   inherited;
   FCtrl.Registro.Codigo := FCodigo;
@@ -158,9 +187,16 @@ begin
         if LcExternalCode <> '' then
           LcJson.AddPair('externalCode', LcExternalCode);
 
-        // addresses — endereço único do colaborador (UF/Cidade por
-        // descrição, igual ao padrão já usado em ControllerColaborador.FillDataObjeto)
-        if (Trim(FCtrl.Registro.Endereco) <> '') or (Trim(FCtrl.Registro.Cep) <> '') then
+        // addresses - endereco do COLABORADOR, quando COMPLETO (rua + UF + cidade
+        // resolvidas). Colaborador sem cadastro completo usa o endereco da MINHA
+        // EMPRESA (TB_EMPRESA.EMP_TIPO = 0): continua sendo uma ENTIDADE PROPRIA
+        // (CPF ou externalCode), so o endereco e emprestado (Valdo, 2026-11-22).
+        // Antes, so o CEP preenchido gerava endereco com rua vazia e estado/cidade
+        // 0, e o servidor recusava o colaborador inteiro (400 bloco entity).
+        LcRua          := Trim(FCtrl.Registro.Endereco);
+        LcCodigoEstado := 0;
+        LcCodigoCidade := 0;
+        if LcRua <> '' then
         Begin
           Try
             LcUF := TControllerUf.Create(nil);
@@ -171,16 +207,53 @@ begin
             FreeAndNil(LcUF);
             FreeAndNil(LcCidade);
           End;
-
+        End;
+        LcEnderecoOk := (LcRua <> '') and (LcCodigoEstado > 0) and (LcCodigoCidade > 0);
+        LcKind := 'RESIDENCIAL';
+        LcNum := '';
+        LcCompl := '';
+        LcBairro := FCtrl.Registro.Bairro;
+        LcCep := OnlyDigits(FCtrl.Registro.Cep);
+        LcCodigoPais := 1058;
+        if not LcEnderecoOk then
+        Begin
+          LcEnd := TControllerEndereco.Create(nil);
+          Try
+            LcEnd.Registro.CodigoEmpresa := GetCodigoMinhaEmpresa;
+            if LcEnd.Registro.CodigoEmpresa > 0 then
+              LcEnd.getByEmpresa;
+            LcEnderecoOk := (LcEnd.Registro.Codigo > 0) and
+                            (Trim(LcEnd.Registro.Logradouro) <> '') and
+                            (LcEnd.Registro.CodigoEstado > 0) and
+                            (LcEnd.Registro.CodigoCidade > 0);
+            if LcEnderecoOk then
+            Begin
+              LcKind         := 'COMERCIAL';
+              LcRua          := Trim(LcEnd.Registro.Logradouro);
+              LcNum          := LcEnd.Registro.NumeroPredial;
+              LcCompl        := LcEnd.Registro.Complemento;
+              LcBairro       := LcEnd.Registro.Bairro;
+              LcCep          := OnlyDigits(LcEnd.Registro.Cep);
+              LcCodigoEstado := LcEnd.Registro.CodigoEstado;
+              LcCodigoCidade := LcEnd.Registro.CodigoCidade;
+              if LcEnd.Registro.CodigoPais > 0 then
+                LcCodigoPais := LcEnd.Registro.CodigoPais;
+            End;
+          Finally
+            FreeAndNil(LcEnd);
+          End;
+        End;
+        if LcEnderecoOk then
+        Begin
           LcAddresses := TJSONArray.Create;
           LcAddress := TJSONObject.Create;
-          LcAddress.AddPair('kind', 'RESIDENCIAL');
-          LcAddress.AddPair('street', FCtrl.Registro.Endereco);
-          LcAddress.AddPair('nmbr', '');
-          LcAddress.AddPair('complement', '');
-          LcAddress.AddPair('neighborhood', FCtrl.Registro.Bairro);
-          LcAddress.AddPair('zipCode', OnlyDigits(FCtrl.Registro.Cep));
-          LcAddress.AddPair('tbCountryId', TJSONNumber.Create(1058));
+          LcAddress.AddPair('kind', LcKind);
+          LcAddress.AddPair('street', LcRua);
+          LcAddress.AddPair('nmbr', LcNum);
+          LcAddress.AddPair('complement', LcCompl);
+          LcAddress.AddPair('neighborhood', LcBairro);
+          LcAddress.AddPair('zipCode', LcCep);
+          LcAddress.AddPair('tbCountryId', TJSONNumber.Create(LcCodigoPais));
           LcAddress.AddPair('tbStateId', TJSONNumber.Create(LcCodigoEstado));
           LcAddress.AddPair('tbCityId', TJSONNumber.Create(LcCodigoCidade));
           LcAddress.AddPair('main', 'S');

@@ -33,6 +33,7 @@ Type
     procedure getByTabelaProduto;
     procedure getByCodigo;
     procedure getList;
+    function getListCodigos: TArray<Integer>;
     function CalcularPrecoPelaMargemLucro(Fc_Vl_Custo,Fc_Aq_Margem:real):Real;
     procedure clear;
 
@@ -237,6 +238,66 @@ Begin
     End;
   Finally
     FinalizaQuery(Lc_Qry)
+  End;
+end;
+
+// Primeira carga: so os CODIGOS (PRC_CODIGO), mesmo filtro do getList, sem montar a entidade (RTTI) nem trazer
+// todas as colunas - ver getListCodigos de TControllerProduto.
+function TControllerPreco.getListCodigos: TArray<Integer>;
+var
+  Lc_Qry : TIBQuery;
+  LcCodigos : TList<Integer>;
+begin
+  LcCodigos := TList<Integer>.Create;
+  Lc_Qry := GeraQuery;
+  Try
+    with Lc_Qry do
+    Begin
+      active := False;
+      sql.Clear;
+      sql.add('SELECT PRC_CODIGO FROM TB_PRECO where (PRC_CODIGO > 0 ) ');
+      if Registro.CodigoProduto > 0 then
+        sql.add(' AND (PRC_CODPRO=:PRO_CODIGO) ');
+      if Registro.CodigoTabela > 0 then
+        sql.add(' AND (PRC_CODTPR=:TPR_CODIGO) ');
+
+      sql.add(' ORDER BY PRC_CODTPR, prc_codpro ');
+      //Passagem de Parametro
+      if Registro.CodigoProduto > 0 then
+        ParamByName('PRO_CODIGO').AsInteger := Registro.CodigoProduto;
+      if Registro.CodigoTabela > 0 then
+        ParamByName('TPR_CODIGO').AsInteger := Registro.CodigoTabela;
+      // Primeira carga por periodo (padrao Fc_Usuario, Valdo 2026-08-04):
+      // preco de produto movimentado em nota do periodo
+      if Periodo then
+      Begin
+        sql.Clear;
+        sql.add(concat(
+                'SELECT DISTINCT PR.PRC_CODIGO ',
+                'FROM TB_PEDIDO PD ',
+                '   INNER JOIN TB_NOTA_FISCAL NF ',
+                '   ON (NF.NFL_CODPED = PD.PED_CODIGO) ',
+                '   INNER JOIN TB_ITENS_NFL IT ',
+                '   ON (IT.ITF_CODPED = PD.PED_CODIGO) ',
+                '   INNER JOIN TB_PRECO PR ',
+                '   ON (PR.PRC_CODPRO = IT.ITF_CODPRO) ',
+                'WHERE NF.NFL_DT_EMISSAO BETWEEN :DATAINICIAL AND :DATAFINAL'
+        ));
+        ParamByName('DATAINICIAL').AsDateTime := DataInicial;
+        ParamByName('DATAFINAL').AsDateTime  := DataFinal;
+      End;
+      Active := True;
+      while not Eof do
+      Begin
+        LcCodigos.Add(FieldByName('PRC_CODIGO').AsInteger);
+        Next;
+      End;
+      Close;
+    end;
+    Result := LcCodigos.ToArray;
+  Finally
+    FinalizaQuery(Lc_Qry);
+    LcCodigos.Free;
   End;
 end;
 

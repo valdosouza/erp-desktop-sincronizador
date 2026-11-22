@@ -33,6 +33,7 @@ Type
     function getQuitacao:Integer;
     function getByID:Boolean;
     procedure getList;
+    function getListCodigos: TArray<Integer>;
     function DeletaByQuitacao:Boolean;
     procedure getListSincronia(Data:TDAteTime;Tipo:String);
     procedure ClearDataObjecto;
@@ -232,6 +233,61 @@ begin
   Finally
     FinalizaQuery(Lc_Qry);
   End;
+end;
+
+// Primeira carga: so os CODIGOS (MVF_CODIGO), mesmo filtro do getList, sem montar a entidade (RTTI) nem trazer
+// todas as colunas - ver getListCodigos de TControllerProduto.
+function TControllerMovimentoFinanceiro.getListCodigos: TArray<Integer>;
+var
+  Lc_Qry : TIBQuery;
+  LcCodigos : TList<Integer>;
+begin
+  LcCodigos := TList<Integer>.Create;
+  Lc_Qry := GeraQuery;
+  Try
+    with Lc_Qry do
+    Begin
+      sql.add(concat(
+                'SELECT MVF_CODIGO ',
+                'FROM TB_MOVIM_FINANCEIRO ',
+                'WHERE MVF_CODIGO IS NOT NULL '
+     ));
+
+      if FPeriodo then
+        sql.add(' AND ( MVF_DATA BETWEEN :DATAINI AND :DATAFIM ) ');
+
+      if registro.Codigo >0 then
+        sql.Add(' AND (MVF_CODIGO=:MVF_CODIGO) ' );
+
+      if registro.Quitacao >0 then
+        sql.Add(' AND (MVF_CODQTC=:MVF_CODQTC) AND (MVF_CODQTC>0)' );
+
+      if FPeriodo then
+      Begin
+        ParamByName('DATAINI').AsDateTime := FDataInicial;
+        ParamByName('DATAFIM').AsDateTime := FDataFinal;
+      End;
+
+      if registro.Quitacao >0 then
+        ParamByName('MVF_CODQTC').AsInteger := Registro.Quitacao;
+
+      if Registro.Codigo >0 then
+        ParamByName('MVF_CODIGO').AsInteger := Registro.Codigo;
+
+      Active := True;
+      while not Eof do
+      Begin
+        LcCodigos.Add(FieldByName('MVF_CODIGO').AsInteger);
+        Next;
+      End;
+
+    end;
+    Result := LcCodigos.ToArray;
+  Finally
+    FinalizaQuery(Lc_Qry);
+    LcCodigos.Free;
+  End;
+
 end;
 
 procedure TControllerMovimentoFinanceiro.getList;

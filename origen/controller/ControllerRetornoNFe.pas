@@ -19,6 +19,7 @@ Type
     destructor Destroy; override;
     procedure getByNotaFiscal;
     procedure getlist;
+    function getListCodigos: TArray<Integer>;
     function salva:boolean;
     function atualiza:boolean;
     function migra:Boolean;
@@ -105,6 +106,52 @@ begin
     end;
   Finally
     FinalizaQuery(Lc_Qry);
+  End;
+end;
+
+// Primeira carga: so os CODIGOS (NFE_CODIGO), mesmo filtro do getlist, sem montar a entidade (RTTI) nem trazer
+// todas as colunas - ver getListCodigos de TControllerProduto.
+function TControllerRetornoNFe.getListCodigos: TArray<Integer>;
+var
+  Lc_Qry : TIBQuery;
+  LcCodigos : TList<Integer>;
+begin
+  LcCodigos := TList<Integer>.Create;
+  Lc_Qry := GeraQuery;
+  Try
+    with Lc_Qry do
+    Begin
+      sql.add(concat('SELECT NFE.NFE_CODIGO ',
+                      'FROM TB_RETORNO_NFE NFE '
+                    ));
+
+      if FPeriodo then
+      Begin
+        sql.add(concat(
+                  '  INNER JOIN TB_NOTA_FISCAL NF ',
+                  '  ON (NF.NFL_CODIGO = NFE.NFE_CODNFL) '
+        ));
+
+        sql.add('WHERE ( NF.NFL_DT_EMISSAO BETWEEN :DATAINI AND :DATAFIM ) ');
+      End;
+
+      if FPeriodo then
+      Begin
+        ParamByName('DATAINI').AsDateTime := FDataInicial;
+        ParamByName('DATAFIM').AsDateTime := FDataFinal;
+      End;
+
+      Active := True;
+      while not Eof do
+      Begin
+        LcCodigos.Add(FieldByName('NFE_CODIGO').AsInteger);
+        Next;
+      End;
+    end;
+    Result := LcCodigos.ToArray;
+  Finally
+    FinalizaQuery(Lc_Qry);
+    LcCodigos.Free;
   End;
 end;
 

@@ -23,6 +23,7 @@ Type
     destructor Destroy; override;
     procedure getById;
     procedure getlist;
+    function getListCodigos: TArray<Integer>;
     procedure Clear;
     function salva:boolean;
     function delete:boolean;
@@ -412,6 +413,80 @@ end;
 procedure TControllerFinanceiro.getById;
 begin
   _getByKey(Registro);
+end;
+
+// Primeira carga: so os CODIGOS (FIN_CODIGO), mesmo filtro do getlist, sem montar a entidade (RTTI) nem trazer
+// todas as colunas - ver getListCodigos de TControllerProduto.
+function TControllerFinanceiro.getListCodigos: TArray<Integer>;
+var
+  Lc_Qry : TIBQuery;
+  LcCodigos : TList<Integer>;
+begin
+  LcCodigos := TList<Integer>.Create;
+  Lc_Qry := GeraQuery;
+  Try
+    with Lc_Qry do
+    Begin
+      sql.add(concat('SELECT FIN_CODIGO ',
+                      'FROM tb_financeiro ',
+                      'WHERE FIN_CODIGO IS NOT NULL '
+                      ));
+
+      // Periodo pela NOTA vinculada (decisao Valdo 2026-08-04, "enviar
+      // somente o que for do periodo"): FIN_CODNFL e o orderId do espelho -
+      // filtrar por FIN_DATA deixava parcela de nota fora do periodo passar
+      // (e estacionar em 409 ORDER_NOT_SYNCED na web)
+      if FPeriodo then
+        sql.add(concat(
+          ' AND EXISTS (SELECT 1 FROM TB_NOTA_FISCAL NF ',
+          'WHERE (NF.NFL_CODIGO = TB_FINANCEIRO.FIN_CODNFL) ',
+          'AND (NF.NFL_DT_EMISSAO BETWEEN :DATAINI AND :DATAFIM)) '));
+
+      if Registro.Codigo >0 then
+        sql.add(' AND FIN_CODIGO =:FIN_CODIGO ');
+
+      if Registro.CodigoPedido >0 then
+        sql.add(' AND FIN_CODPED=:PED_CODIGO ');
+
+      if Registro.CodigoQuitacao >0 then
+        sql.add(' AND FIN_CODQTC=:FIN_CODQTC ');
+
+      if Registro.DataFinanceiro >0 then
+        sql.add(' AND FIN_DATA=:FIN_DATA ');
+
+      sql.add(' ORDER BY FIN_CODIGO ');
+
+      if FPeriodo then
+      Begin
+        ParamByName('DATAINI').AsDateTime := FDataInicial;
+        ParamByName('DATAFIM').AsDateTime := FDataFinal;
+      End;
+
+      if Registro.Codigo >0 then
+        ParamByName('FIN_CODIGO').AsInteger := Registro.Codigo;
+
+      if Registro.CodigoPedido >0 then
+        ParamByName('PED_CODIGO').AsInteger := Registro.CodigoPedido;
+
+      if Registro.CodigoQuitacao >0 then
+        ParamByName('FIN_CODQTC').AsInteger := Registro.CodigoQuitacao;
+
+      if Registro.DataFinanceiro >0 then
+        ParamByName('FIN_DATA').AsDateTime := Registro.DataFinanceiro;
+
+      Active := True;
+      while not Eof do
+      Begin
+        LcCodigos.Add(FieldByName('FIN_CODIGO').AsInteger);
+        Next;
+      End;
+      Close;
+    end;
+    Result := LcCodigos.ToArray;
+  Finally
+    FinalizaQuery(Lc_Qry);
+    LcCodigos.Free;
+  End;
 end;
 
 procedure TControllerFinanceiro.getlist;
