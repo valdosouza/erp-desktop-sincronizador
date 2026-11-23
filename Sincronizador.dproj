@@ -3,7 +3,7 @@
         <ProjectGuid>{38755575-B55A-4B31-BF5E-86EEFB6A11BD}</ProjectGuid>
         <MainSource>Sincronizador.dpr</MainSource>
         <Base>True</Base>
-        <Config Condition="'$(Config)'==''">Debug</Config>
+        <Config Condition="'$(Config)'==''">Release</Config>
         <TargetedPlatforms>1</TargetedPlatforms>
         <AppType>Application</AppType>
         <FrameworkType>VCL</FrameworkType>
@@ -193,11 +193,11 @@
                 <Platform value="Win64">False</Platform>
             </Platforms>
             <Deployment Version="3">
-                <DeployFile LocalName="D:\Bin\Sincronizador\Sincronizador.exe" Configuration="Debug" Class="ProjectOutput"/>
                 <DeployFile LocalName="D:\bin\roteador\Sincronizador.exe" Configuration="Debug" Class="ProjectOutput"/>
                 <DeployFile LocalName="D:\bin\sincronizador\Sincronizador.exe" Configuration="Release" Class="ProjectOutput"/>
                 <DeployFile LocalName="C:\Bin\roteador\RoteadorGestao.exe" Configuration="Debug" Class="ProjectOutput"/>
                 <DeployFile LocalName="D:\bin\roteador\RoteadorGestao.exe" Configuration="Debug" Class="ProjectOutput"/>
+                <DeployFile LocalName="D:\Bin\Sincronizador\Sincronizador.exe" Configuration="Debug" Class="ProjectOutput"/>
                 <DeployFile LocalName="D:\bin\roteador\RoteadorGestao.exe" Configuration="Release" Class="ProjectOutput"/>
                 <DeployFile LocalName="C:\Bin\roteador\RoteadorGestao.exe" Configuration="Release" Class="ProjectOutput"/>
                 <DeployClass Name="AdditionalDebugSymbols">
